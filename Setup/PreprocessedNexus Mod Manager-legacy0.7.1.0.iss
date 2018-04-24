@@ -11,16 +11,16 @@
 [Setup]
 AppName=Nexus Mod Manager - Legacy
 AppID=6af12c54-643b-4752-87d0-8335503010de
-AppVersion=0.52.3
-AppVerName=Nexus Mod Manager - Legacy 0.52.3
+AppVersion=0.52.4
+AppVerName=Nexus Mod Manager - Legacy 0.52.4
 AppCopyright=Copyright © Black Tree Gaming 2011-2013
-VersionInfoVersion=0.52.3
+VersionInfoVersion=0.52.4
 VersionInfoCompany=Black Tree Gaming
 AppPublisher=Black Tree Gaming
 ;AppPublisherURL=http://...
 ;AppSupportURL=http://...
 ;AppUpdatesURL=http://...
-OutputBaseFilename=Nexus Mod Manager-legacy-0.52.3
+OutputBaseFilename=Nexus Mod Manager-legacy-0.52.4
 DefaultGroupName=Nexus Mod Manager - Legacy
 DefaultDirName={pf}\Nexus Mod Manager - Legacy
 UninstallDisplayName=Nexus Mod Manager - Legacy
