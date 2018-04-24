@@ -12,6 +12,7 @@ using Nexus.Client.Games;
 using Nexus.Client.Games.Tools;
 using Nexus.Client.ModManagement;
 using Nexus.Client.ModManagement.UI;
+using Nexus.Client.ModRepositories.Nexus;
 using Nexus.Client.PluginManagement.UI;
 using Nexus.Client.Settings.UI;
 using Nexus.Client.UI;
@@ -756,7 +757,7 @@ namespace Nexus.Client
 		/// <param name="e">An <see cref="EventArgs"/> describing the event arguments.</param>
 		private void tsbGoPremium_Click(object sender, EventArgs e)
 		{
-			System.Diagnostics.Process.Start("http://skyrim.nexusmods.com/users/premium/");
+			Process.Start(NexusLinks.Premium);
 		}
 
 		#endregion

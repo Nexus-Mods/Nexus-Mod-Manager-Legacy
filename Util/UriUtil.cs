@@ -22,7 +22,7 @@ namespace Nexus.Client.Util
 			Uri uriParsed = null;
 			if (Uri.TryCreate(p_strUri, UriKind.Absolute, out uriParsed))
 				return uriParsed;
-			string strUri = "http://" + p_strUri;
+			string strUri = "https://" + p_strUri;
 			if (Uri.TryCreate(strUri, UriKind.Absolute, out uriParsed))
 				return uriParsed;
 			return null;

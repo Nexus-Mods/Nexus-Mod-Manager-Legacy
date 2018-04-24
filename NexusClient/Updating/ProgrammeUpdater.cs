@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Nexus.Client.ModRepositories.Nexus;
 using Nexus.Client.Util;
 using Nexus.UI.Controls;
 
@@ -16,8 +17,8 @@ namespace Nexus.Client.Updating
 	public class ProgrammeUpdater : UpdaterBase
 	{
 		private bool m_booIsAutoCheck = false;
-		private string m_strUpdateUrlLegacy = "http://dev.nexusmods.com/client/legacy/";
-		private string m_strUpdateUrl45 = "http://dev.nexusmods.com/client/4.5/";
+		private string m_strUpdateUrlLegacy = NexusLinks.UpdaterLegacy;
+		private string m_strUpdateUrl45 = NexusLinks.Updater4dot5;
 		private bool m_booForceLegacy = (Environment.OSVersion.Version.Major <= 5);
 
 		#region Properties
@@ -82,11 +83,11 @@ namespace Nexus.Client.Updating
 					stbUpgradePromptMessage.AppendLine("Should you change your mind you can click the 'Update Nexus Mod Manager' button on the top right corner of the UI.");
 					stbUpgradePromptMessage.AppendLine();
 					stbUpgradePromptMessage.AppendLine("NOTE: Installation of the .Net Framework 4.5 is mandatory for the new version to work:");
-					stbUpgradePromptMessage.AppendLine("http://go.microsoft.com/fwlink/?LinkId=225702");
+					stbUpgradePromptMessage.AppendLine("https://go.microsoft.com/fwlink/?LinkId=225702");
 					stbUpgradePromptMessage.AppendLine();
 					stbUpgradePromptMessage.AppendLine();
 					stbUpgradePromptMessage.AppendLine("You can find the change log for the new release here:");
-					stbUpgradePromptMessage.AppendLine("http://forums.nexusmods.com/index.php?/topic/896029-nexus-mod-manager-release-notes/");
+					stbUpgradePromptMessage.AppendLine(NexusLinks.Releases4dot5);
 
 					try
 					{
@@ -156,7 +157,7 @@ namespace Nexus.Client.Updating
 					stbPromptMessage.AppendLine();
 					stbPromptMessage.AppendLine();
 					stbPromptMessage.AppendLine("NOTE: You can find the change log for the new release here:");
-					stbPromptMessage.AppendLine("http://forums.nexusmods.com/index.php?/topic/1759486-nexus-mod-manager-legacy-release-notes/");
+					stbPromptMessage.AppendLine(NexusLinks.Releases);
 
 					try
 					{
@@ -194,7 +195,7 @@ namespace Nexus.Client.Updating
 						stbPromptMessage.AppendLine();
 						stbPromptMessage.AppendLine();
 						stbPromptMessage.AppendLine("NOTE: You can find the release notes, planned features and past versions here:");
-						stbPromptMessage.AppendLine("http://forums.nexusmods.com/index.php?/topic/896029-nexus-mod-manager-release-notes/");
+						stbPromptMessage.AppendLine(NexusLinks.Releases);
 
 						try
 						{
@@ -265,7 +266,7 @@ namespace Nexus.Client.Updating
 						stbAVMessage.AppendLine();
 						stbAVMessage.AppendFormat("To fix this issue you need to add {0}'s executable and all its folders to your", EnvironmentInfo.Settings.ModManagerName).AppendLine();
 						stbAVMessage.AppendLine("anti-virus exception list. You can also download the update manually from:");
-						stbAVMessage.AppendLine("http://www.nexusmods.com/games/mods/modmanager/");
+						stbAVMessage.AppendLine(NexusLinks.Releases);
 
 						try
 						{
