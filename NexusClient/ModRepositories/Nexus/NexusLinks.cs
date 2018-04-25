@@ -41,7 +41,15 @@
 		{
 			get
 			{
-				return @"https://nmm.nexusmods.com/NMM?GetLatestVersion";
+				return @"https://legacy-api.nexusmods.com/NMM?GetLatestVersion";
+			}
+		}
+
+		public static string LatestVersion4dot5
+		{
+			get
+			{
+				return @"https://legacy-api.nexusmods.com/NMM?GetLatestVersion";
 			}
 		}
 
@@ -69,7 +77,7 @@
 			}
 		}
 
-		public static string Releases
+		public static string ReleasesLegacy
 		{
 			get
 			{

@@ -419,7 +419,7 @@ namespace Nexus.Client.DownloadMonitoring.UI
 			((Timer)sender).Stop();
 			SizeColumnsToFit();
 		}
-
+		
 		/// <summary>
 		/// This resizes the columns to fill the list view.
 		/// </summary>
@@ -430,9 +430,14 @@ namespace Nexus.Client.DownloadMonitoring.UI
 			m_booResizing = true;
 			Int32 intFixedWidth = 0;
 			for (Int32 i = 0; i < lvwTasks.Columns.Count; i++)
+			{
 				if (lvwTasks.Columns[i] != clmOverallMessage)
 					intFixedWidth += lvwTasks.Columns[i].Width;
-			clmOverallMessage.Width = lvwTasks.ClientSize.Width - intFixedWidth;
+			}
+
+			int intNameWidth = lvwTasks.ClientSize.Width - intFixedWidth;
+
+			clmOverallMessage.Width = intNameWidth < 80 ? 80 : intNameWidth;
 			m_booResizing = false;
 		}
 

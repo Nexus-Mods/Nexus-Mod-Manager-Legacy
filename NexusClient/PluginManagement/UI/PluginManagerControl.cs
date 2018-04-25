@@ -12,6 +12,8 @@ using Nexus.Client.Games;
 using Nexus.Client.Plugins;
 using Nexus.Client.UI;
 using Nexus.Client.Util;
+using Nexus.Client.BackgroundTasks;
+using Nexus.Client.BackgroundTasks.UI;
 using Nexus.UI.Controls;
 
 namespace Nexus.Client.PluginManagement.UI
@@ -26,6 +28,12 @@ namespace Nexus.Client.PluginManagement.UI
 		private bool m_booSettingPluginActiveCheck = false;
 		private Timer m_tmrColumnSizer = new Timer();
 		private bool m_booControlIsLoaded = false;
+
+		#region Events
+
+		public event EventHandler UpdatePluginsCount;
+
+		#endregion
 
 		#region Properties
 
@@ -58,7 +66,9 @@ namespace Nexus.Client.PluginManagement.UI
 				m_vmlViewModel.ImportFailed += new EventHandler<ImportFailedEventArgs>(ViewModel_ImportFailed);
 				m_vmlViewModel.ImportPartiallySucceeded += new EventHandler<ImportSucceededEventArgs>(ViewModel_ImportPartiallySucceeded);
 				m_vmlViewModel.ImportSucceeded += new EventHandler<ImportSucceededEventArgs>(ViewModel_ImportSucceeded);
-
+				m_vmlViewModel.SortingPlugins += new EventHandler<EventArgs<IBackgroundTask>>(ViewModel_SortingPlugins);
+				m_vmlViewModel.ManagingMultiplePlugins += new EventHandler<EventArgs<IBackgroundTask>>(ViewModel_ManagingMultiplePlugins);
+				
 				new ToolStripItemCommandBinding<IEnumerable<Plugin>>(tsbMoveUp, m_vmlViewModel.MoveUpCommand, GetSelectedPlugins);
 				new ToolStripItemCommandBinding<IList<Plugin>>(tsbMoveDown, m_vmlViewModel.MoveDownCommand, GetSelectedPlugins);
 				Command cmdDisableAll = new Command("Disable All Plugins", "Disable all the active plugins.", DisableAllPlugins);
@@ -160,11 +170,7 @@ namespace Nexus.Client.PluginManagement.UI
 		protected void DisableAllPlugins()
 		{
 			if (MessageBox.Show("Do you really want to disable all active plugins?", "Confirm?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
-				foreach (ListViewItem items in rlvPlugins.Items)
-				{
-					if ((items.Checked) && (items.Index > 0))
-						ViewModel.DeactivatePlugin((Plugin)items.Tag);
-				}
+				ViewModel.PluginsDisableAll();
 		}
 
 		/// <summary>
@@ -173,11 +179,7 @@ namespace Nexus.Client.PluginManagement.UI
 		protected void EnableAllPlugins()
 		{
 			if (MessageBox.Show("Do you really want to enable all inactive plugins?", "Confirm?", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
-				foreach (ListViewItem items in rlvPlugins.Items)
-				{
-					if ((items.Checked == false) && (items.Index > 0))
-						ViewModel.ActivatePlugin((Plugin)items.Tag);
-				}
+				ViewModel.PluginsEnableAll();
 		}
 
 		#region Binding
@@ -261,17 +263,20 @@ namespace Nexus.Client.PluginManagement.UI
 		protected void RefreshPluginIndices()
 		{
 			Int32 intIndex = 0;
-			foreach (ListViewItem lviPlugin in rlvPlugins.Items)
+			lock (rlvPlugins.Items)
 			{
-				if (ViewModel.ActivePlugins.Contains((Plugin)lviPlugin.Tag))
+				foreach (ListViewItem lviPlugin in rlvPlugins.Items)
 				{
-					lviPlugin.SubItems[clmIndexHex.Name].Text = String.Format("{0:x2}", intIndex++).ToUpper();
-					lviPlugin.SubItems[clmIndex.Name].Text = intIndex.ToString();
-				}
-				else
-				{
-					lviPlugin.SubItems[clmIndexHex.Name].Text = null;
-					lviPlugin.SubItems[clmIndex.Name].Text = null;
+					if (ViewModel.ActivePlugins.Contains((Plugin)lviPlugin.Tag))
+					{
+						lviPlugin.SubItems[clmIndexHex.Name].Text = String.Format("{0:x2}", intIndex++).ToUpper();
+						lviPlugin.SubItems[clmIndex.Name].Text = intIndex.ToString();
+					}
+					else
+					{
+						lviPlugin.SubItems[clmIndexHex.Name].Text = null;
+						lviPlugin.SubItems[clmIndex.Name].Text = null;
+					}
 				}
 			}
 		}
@@ -305,7 +310,8 @@ namespace Nexus.Client.PluginManagement.UI
 				case NotifyCollectionChangedAction.Remove:
 				case NotifyCollectionChangedAction.Reset:
 					foreach (Plugin plgRemoved in e.OldItems)
-						rlvPlugins.Items.RemoveByKey(plgRemoved.Filename.ToLowerInvariant());
+						lock(rlvPlugins.Items)
+							rlvPlugins.Items.RemoveByKey(plgRemoved.Filename.ToLowerInvariant());
 					RefreshPluginIndices();
 					break;
 				case NotifyCollectionChangedAction.Move:
@@ -317,12 +323,20 @@ namespace Nexus.Client.PluginManagement.UI
 						//if the item at the new index equals the moved item,
 						// then the item has already been moved in the UI,
 						// so do nothing...
+						if (intOldIndex >= rlvPlugins.Items.Count)
+							break;
+
 						if (!pcpComparer.Equals(plgMoved, (Plugin)rlvPlugins.Items[intNewIndex].Tag))
 						{
 							//...otherwise, move the item
 							ListViewItem lviMoved = rlvPlugins.Items[intOldIndex];
-							rlvPlugins.Items.RemoveAt(intOldIndex);
-							rlvPlugins.Items.Insert(intNewIndex, lviMoved);
+							lock (rlvPlugins.Items)
+								rlvPlugins.Items.RemoveAt(intOldIndex);
+
+							if (intNewIndex >= rlvPlugins.Items.Count)
+								rlvPlugins.Items.Add(lviMoved);
+							else
+								rlvPlugins.Items.Insert(intNewIndex, lviMoved);
 						}
 						intNewIndex++;
 						intOldIndex++;
@@ -366,7 +380,8 @@ namespace Nexus.Client.PluginManagement.UI
 					if (lviPlugin.Index != p_intIndex)
 					{
 						intLineTracker = 4;
-						rlvPlugins.Items.Remove(lviPlugin);
+						lock (rlvPlugins.Items)
+							rlvPlugins.Items.Remove(lviPlugin);
 						intLineTracker = 5;
 						rlvPlugins.Items.Insert(p_intIndex, lviPlugin);
 						intLineTracker = 6;
@@ -455,6 +470,49 @@ namespace Nexus.Client.PluginManagement.UI
 		}
 
 		/// <summary>
+		/// Handles the <see cref="PluginManagerVM.SortingPlugins"/> event of the view model.
+		/// </summary>
+		/// <remarks>
+		/// This displays the progress dialog.
+		/// </remarks>
+		/// <param name="sender">The object that raised the event.</param>
+		/// <param name="e">An <see cref="EventArgs{IBackgroundTask}"/> describing the event arguments.</param>
+		private void ViewModel_SortingPlugins(object sender, EventArgs<IBackgroundTask> e)
+		{
+			if (InvokeRequired)
+			{
+				Invoke((Action<object, EventArgs<IBackgroundTask>>)ViewModel_SortingPlugins, sender, e);
+				return;
+			}
+			ProgressDialog.ShowDialog(this, e.Argument);
+
+			if (e.Argument.ReturnValue == null)
+			{
+				MessageBox.Show("Nexus Mod Manager was unable to perform the automatic plugin sorting." +
+					Environment.NewLine + Environment.NewLine + "Restart the mod manager and retry.",
+					"Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+			}
+		}
+
+		/// <summary>
+		/// Handles the <see cref="PluginManagerVM.ManagingMultiplePlugins"/> event of the view model.
+		/// </summary>
+		/// <remarks>
+		/// This displays the progress dialog.
+		/// </remarks>
+		/// <param name="sender">The object that raised the event.</param>
+		/// <param name="e">An <see cref="EventArgs{IBackgroundTask}"/> describing the event arguments.</param>
+		private void ViewModel_ManagingMultiplePlugins(object sender, EventArgs<IBackgroundTask> e)
+		{
+			if (InvokeRequired)
+			{
+				Invoke((Action<object, EventArgs<IBackgroundTask>>)ViewModel_ManagingMultiplePlugins, sender, e);
+				return;
+			}
+			ProgressDialog.ShowDialog(this, e.Argument);
+		}
+		
+		/// <summary>
 		/// Handles the <see cref="INotifyCollectionChanged.CollectionChanged"/> event of the view model's
 		/// active plugin list.
 		/// </summary>
@@ -483,6 +541,7 @@ namespace Nexus.Client.PluginManagement.UI
 					break;
 			}
 			SetCommandExecutableStatus();
+			UpdatePluginsCount(this, e);
 			RefreshPluginIndices();
 		}
 
@@ -504,19 +563,12 @@ namespace Nexus.Client.PluginManagement.UI
 			if (ViewModel.CanChangeActiveState((Plugin)rlvPlugins.Items[e.Index].Tag))
 			{
 				if (e.NewValue == CheckState.Checked)
-					if ((ViewModel.MaxAllowedActivePluginsCount > 0) && (ViewModel.ActivePlugins.Count >= ViewModel.MaxAllowedActivePluginsCount))
-					{
-						string strTooManyPlugins = String.Format("The requested change to the active plugins list would result in over {0} plugins being active.", ViewModel.MaxAllowedActivePluginsCount);
-						strTooManyPlugins += Environment.NewLine + String.Format("The current game doesn't support more than {0} active plugins, you need to disable at least one plugin to continue.", ViewModel.MaxAllowedActivePluginsCount);
-						strTooManyPlugins += Environment.NewLine + Environment.NewLine + String.Format("NOTE: This is a game engine limitation, not {0}'s.", Application.ProductName);
-						MessageBox.Show(strTooManyPlugins, "Too many active plugins", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-					}
-					else
-						ViewModel.ActivatePlugin((Plugin)rlvPlugins.Items[e.Index].Tag);
+					ViewModel.ActivatePlugin((Plugin)rlvPlugins.Items[e.Index].Tag);
 				else if (e.NewValue == CheckState.Unchecked)
 					ViewModel.DeactivatePlugin((Plugin)rlvPlugins.Items[e.Index].Tag);
 			}
 			e.NewValue = ViewModel.ActivePlugins.Contains((Plugin)rlvPlugins.Items[e.Index].Tag) ? CheckState.Checked : CheckState.Unchecked;
+			UpdatePluginsCount(this, e);
 		}
 
 		#endregion
@@ -543,6 +595,11 @@ namespace Nexus.Client.PluginManagement.UI
 				hlbPluginInfo.Text = null;
 			}
 			SetCommandExecutableStatus();
+		}
+
+        public void SetCommandBackupPlugCStatus(bool p_booCheck)
+		{
+			this.Enabled = p_booCheck;
 		}
 
 		#region Plugin Order
@@ -747,7 +804,7 @@ namespace Nexus.Client.PluginManagement.UI
 		}
 
 		#endregion
-
+		
 		#region Import
 
 		/// <summary>

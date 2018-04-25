@@ -1,4 +1,5 @@
 ﻿using Nexus.Client.DownloadMonitoring;
+using Nexus.Client.ActivateModsMonitoring;
 using Nexus.Client.ModManagement;
 using Nexus.Client.ModManagement.InstallationLog;
 using Nexus.Client.PluginManagement;
@@ -59,6 +60,12 @@ namespace Nexus.Client
 		/// <value>The download monitor to use to manage the monitored activities.</value>
 		public DownloadMonitor DownloadMonitor { get; private set; }
 
+        /// <summary>
+		/// Gets the activate mods monitor to use to manage the monitored activities.
+		/// </summary>
+		/// <value>The activate mods monitor to use to manage the monitored activities.</value>
+		public ActivateModsMonitor ActivateModsMonitor { get; private set; }
+
 		/// <summary>
 		/// Gets the update manager to use to perform updates.
 		/// </summary>
@@ -80,7 +87,7 @@ namespace Nexus.Client
 		/// <param name="p_pmgPluginManager">The manager to use to manage plugins.</param>
 		/// <param name="p_amtMonitor">The download monitor to use to manage the monitored activities.</param>
 		/// <param name="p_umgUpdateManager">The update manager to use to perform updates.</param>
-		public ServiceManager(IInstallLog p_ilgModInstallLog, ActivePluginLog p_aplActivePluginLog, IPluginOrderLog p_polPluginOrderLog, IModRepository p_mrpModRepository, ModManager p_mmgModManager, IPluginManager p_pmgPluginManager, DownloadMonitor p_amtMonitor, UpdateManager p_umgUpdateManager)
+        public ServiceManager(IInstallLog p_ilgModInstallLog, ActivePluginLog p_aplActivePluginLog, IPluginOrderLog p_polPluginOrderLog, IModRepository p_mrpModRepository, ModManager p_mmgModManager, IPluginManager p_pmgPluginManager, DownloadMonitor p_amtMonitor, ActivateModsMonitor p_ammMonitor, UpdateManager p_umgUpdateManager)
 		{
 			ModInstallLog = p_ilgModInstallLog;
 			ActivePluginLog = p_aplActivePluginLog;
@@ -90,6 +97,7 @@ namespace Nexus.Client
 			PluginManager = p_pmgPluginManager;
 			DownloadMonitor = p_amtMonitor;
 			UpdateManager = p_umgUpdateManager;
+            ActivateModsMonitor = p_ammMonitor;
 		}
 
 		#endregion

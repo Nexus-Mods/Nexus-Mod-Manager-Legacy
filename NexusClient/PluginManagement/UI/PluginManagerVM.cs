@@ -1,13 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
+using Nexus.Client.ActivateModsMonitoring;
 using Nexus.Client.Commands;
 using Nexus.Client.Commands.Generic;
 using Nexus.Client.Games;
 using Nexus.Client.Plugins;
 using Nexus.Client.Settings;
+using Nexus.Client.UI;
 using Nexus.Client.Util.Collections;
+using Nexus.Client.Util;
+using Nexus.Client.BackgroundTasks;
+using Nexus.Client.BackgroundTasks.UI;
 using System.Linq;
 
 namespace Nexus.Client.PluginManagement.UI
@@ -44,6 +50,25 @@ namespace Nexus.Client.PluginManagement.UI
 		/// Raised when importing a load order succeeds.
 		/// </summary>
 		public event EventHandler<ImportSucceededEventArgs> ImportSucceeded = delegate { };
+
+		/// <summary>
+		/// Raised when the mods list is being updated.
+		/// </summary>
+		public event EventHandler<EventArgs<IBackgroundTask>> SortingPlugins = delegate { };
+
+		/// <summary>
+		/// Managing multiple plugins.
+		/// </summary>
+		public event EventHandler<EventArgs<IBackgroundTask>> ManagingMultiplePlugins = delegate { };
+
+		#endregion
+
+		#region Delegates
+
+		/// <summary>
+		/// Called when an updater's action needs to be confirmed.
+		/// </summary>
+		public ConfirmActionMethod ConfirmUpdaterAction = delegate { return true; };
 
 		#endregion
 
@@ -170,6 +195,14 @@ namespace Nexus.Client.PluginManagement.UI
 		protected IGameMode CurrentGameMode { get; private set; }
 
 		/// <summary>
+		/// Gets the view model that encapsulates the data
+		/// and operations for diaplying the mod activation monitor.
+		/// </summary>
+		/// <value>The view model that encapsulates the data
+		/// and operations for diaplying the mod activation monitor.</value>
+		protected ActivateModsMonitor ModActivationMonitor { get; private set; }
+
+		/// <summary>
 		/// Gets the max allowed number of active plugins.
 		/// </summary>
 		/// <value>The max allowed number of active plugins (0 if there's no limit).</value>
@@ -178,6 +211,18 @@ namespace Nexus.Client.PluginManagement.UI
 			get
 			{
 				return PluginManager.MaxAllowedActivePluginsCount;
+			}
+		}
+
+		/// <summary>
+		/// Gets the list of critical plugin names, ordered by load order.
+		/// </summary>
+		/// <value>The list of critical plugin names, ordered by load order.</value>
+		public string[] OrderedCriticalPluginNames
+		{
+			get
+			{
+				return CurrentGameMode.OrderedCriticalPluginNames;
 			}
 		}
 
@@ -191,11 +236,17 @@ namespace Nexus.Client.PluginManagement.UI
 		/// <param name="p_pmgPluginManager">The plugin manager to use to manage plugins.</param>
 		/// <param name="p_setSettings">The application and user settings.</param>
 		/// <param name="p_gmdGameMode">The game mode that is currently being managed.</param>
-		public PluginManagerVM(IPluginManager p_pmgPluginManager, ISettings p_setSettings, IGameMode p_gmdGameMode)
+		public PluginManagerVM(IPluginManager p_pmgPluginManager, ISettings p_setSettings, IGameMode p_gmdGameMode, ActivateModsMonitor p_ammMonitor)
 		{
 			PluginManager = p_pmgPluginManager;
 			Settings = p_setSettings;
 			CurrentGameMode = p_gmdGameMode;
+			ModActivationMonitor = p_ammMonitor;
+
+			CurrentGameMode.LoadOrderManager.ActivePluginUpdate += new EventHandler(LoadOrderManager_ActivePluginUpdate);
+			CurrentGameMode.LoadOrderManager.LoadOrderUpdate += new EventHandler(LoadOrderManager_LoadOrderUpdate);
+			CurrentGameMode.LoadOrderManager.ExternalPluginAdded +=	new EventHandler(LoadOrderManager_ExternalPluginAdded);
+			CurrentGameMode.LoadOrderManager.ExternalPluginRemoved += new EventHandler(LoadOrderManager_ExternalPluginRemoved);
 
 			ActivatePluginCommand = new Command<Plugin>("Activate Plugin", "Activates the selected plugin.", ActivatePlugin);
 			DeactivatePluginCommand = new Command<Plugin>("Deactivate Plugin", "Deactivates the selected plugin.", DeactivatePlugin);
@@ -206,6 +257,109 @@ namespace Nexus.Client.PluginManagement.UI
 			ExportLoadOrderToClipboardCommand = new Command("Export to the clipboard", "Exports the current load order to the clipboard.", ExportLoadOrderToClipboard);
 			ImportLoadOrderFromFileCommand = new Command<string>("Import from a text file", "Imports a load order from a text file", ImportLoadOrderFromFile);
 			ImportLoadOrderFromClipboardCommand = new Command("Import from the clipboard", "Imports a load order from the clipboard", ImportLoadOrderFromClipboard);
+		}
+
+		#endregion
+
+		#region External Plugin Update
+
+		/// <summary>
+		/// Handles changes to the plugin activation state made by external programs (or manually)
+		/// </summary>
+		private void LoadOrderManager_ActivePluginUpdate(object sender, EventArgs e)
+		{
+			if (ModActivationMonitor.IsInstalling)
+				return;
+
+			List<string> lstNewActiveList;
+			List<string> lstActivatedPlugins = new List<string>();
+			List<string> lstDisabledPlugins = new List<string>();
+			List<string> lstActivePlugins;
+
+			if (sender != null)
+			{
+				try
+				{
+					lstNewActiveList = ((string[])sender).ToList();
+				}
+				catch
+				{
+					return;
+				}
+
+				if (ActivePlugins.Count > 0)
+				{
+					lstActivePlugins = ActivePlugins.Select(x => x.Filename).ToList();
+					var ActivatedPlugins = lstNewActiveList.Except(lstActivePlugins, StringComparer.InvariantCultureIgnoreCase);
+					if (ActivatedPlugins != null)
+						lstActivatedPlugins = ActivatedPlugins.ToList();
+
+					var DisabledPlugins = lstActivePlugins.Except(lstNewActiveList, StringComparer.InvariantCultureIgnoreCase);
+					if (DisabledPlugins != null)
+						lstDisabledPlugins = DisabledPlugins.ToList();
+				}
+				else
+					lstActivatedPlugins = lstNewActiveList;
+				
+				foreach (string plugin in lstActivatedPlugins)
+				{
+					if (!PluginManager.IsPluginRegistered(plugin))
+						PluginManager.AddPlugin(plugin);
+
+					if (PluginManager.IsPluginRegistered(plugin))
+						PluginManager.ActivatePlugin(plugin);
+				}
+				foreach (string plugin in lstDisabledPlugins)
+				{
+					if (PluginManager.IsPluginRegistered(plugin))
+						PluginManager.DeactivatePlugin(plugin);
+				}
+			}
+		}
+
+		/// <summary>
+		/// Handles changes to the plugin load order made by external programs (or manually)
+		/// </summary>
+		private void LoadOrderManager_LoadOrderUpdate(object sender, EventArgs e)
+		{
+			if (ModActivationMonitor.IsInstalling)
+				return;
+
+			if (sender != null)
+				RefreshPluginSorting((string[])sender);
+		}
+
+		/// <summary>
+		/// Handles new plugins added by external programs (or manually)
+		/// </summary>
+		private void LoadOrderManager_ExternalPluginAdded(object sender, EventArgs e)
+		{
+			if (ModActivationMonitor.IsInstalling)
+				return;
+
+			if (sender != null)
+			{
+				PluginManager.AddPlugin(sender.ToString());
+			}
+		}
+
+		/// <summary>
+		/// Handles plugins removed by external programs (or manually)
+		/// </summary>
+		private void LoadOrderManager_ExternalPluginRemoved(object sender, EventArgs e)
+		{
+			if (ModActivationMonitor.IsInstalling)
+				return;
+
+			if (sender != null)
+			{
+				if (PluginManager.IsPluginRegistered(sender.ToString()))
+				{
+					if (PluginManager.IsPluginActive(sender.ToString()))
+						PluginManager.DeactivatePlugin(sender.ToString());
+					PluginManager.RemovePlugin(sender.ToString());
+				}
+			}
 		}
 
 		#endregion
@@ -228,6 +382,34 @@ namespace Nexus.Client.PluginManagement.UI
 		public void DeactivatePlugin(Plugin p_plgPlugin)
 		{
 			PluginManager.DeactivatePlugin(p_plgPlugin);
+		}
+
+		/// <summary>
+		/// Deactivates all the enabled plugins.
+		/// </summary>
+		public void PluginsDisableAll()
+		{
+			List<Plugin> lstActivePlugins = ActivePlugins.ToList();
+
+			foreach (string criticalPlugin in OrderedCriticalPluginNames)
+			{
+				Plugin plgCritical = PluginManager.GetRegisteredPlugin(criticalPlugin);
+				if (plgCritical != null)
+					lstActivePlugins.Remove(plgCritical);
+			}
+
+			ManagingMultiplePlugins(this, new EventArgs<IBackgroundTask>(PluginManager.ManageMultiplePluginsTask(lstActivePlugins, false, ConfirmUpdaterAction)));
+		}
+
+		/// <summary>
+		/// Activates all the plugins.
+		/// </summary>
+		public void PluginsEnableAll()
+		{
+			List<Plugin> lstNotActive = new List<Plugin>();
+			lstNotActive = ManagedPlugins.Except(ActivePlugins).ToList();
+
+			ManagingMultiplePlugins(this, new EventArgs<IBackgroundTask>(PluginManager.ManageMultiplePluginsTask(lstNotActive, true, ConfirmUpdaterAction)));
 		}
 
 		/// <summary>
@@ -358,6 +540,30 @@ namespace Nexus.Client.PluginManagement.UI
 		#endregion
 
 		#region Load Order IO
+
+		#region Automatic Sorting
+
+		/// <summary>
+		/// Automatically sorts the plugins.
+		/// </summary>
+		public void SortPlugins()
+		{
+			SortingPlugins(this, new EventArgs<IBackgroundTask>(PluginManager.AutoPluginSorting(ConfirmUpdaterAction)));		
+		}
+
+		/// <summary>
+		/// Automatically sorts the plugins.
+		/// </summary>
+		public void RefreshPluginSorting(string[] p_strPluginList)
+		{
+			Dictionary<Plugin, string> kvpSortedPlugins;
+
+			GetRegisteredPlugins(p_strPluginList, out kvpSortedPlugins);
+			if ((kvpSortedPlugins != null) && (kvpSortedPlugins.Count > 0))
+				ApplyLoadOrder(kvpSortedPlugins, true);
+		}
+		
+		#endregion
 
 		#region Export
 
@@ -525,24 +731,28 @@ namespace Nexus.Client.PluginManagement.UI
 		/// Applies the load order specified by the given list of registered plugins
 		/// </summary>
 		/// <param name="p_lstRegisteredPlugins">The list of registered plugins.</param>
-		private void ApplyLoadOrder(Dictionary<Plugin, string> p_kvpRegisteredPlugins)
+		/// <param name="p_booSortingOnly">Whether we just want to apply the sorting.</param>
+		public void ApplyLoadOrder(Dictionary<Plugin, string> p_kvpRegisteredPlugins, bool p_booSortingOnly)
 		{
 			Transactions.TransactionScope tsTransaction = null;
 			try
 			{
 				tsTransaction = new Transactions.TransactionScope();
 
-				foreach (KeyValuePair<Plugin, string> kvp in p_kvpRegisteredPlugins)
-				{
-					if (kvp.Value == "1")
+				if (!p_booSortingOnly) 
+				{ 
+					foreach (KeyValuePair<Plugin, string> kvp in p_kvpRegisteredPlugins)
 					{
-						if (PluginManager.CanChangeActiveState(kvp.Key))
-							PluginManager.ActivatePlugin(kvp.Key);
-					}
-					if (kvp.Value == "0")
-					{
-						if (PluginManager.CanChangeActiveState(kvp.Key))
-							PluginManager.DeactivatePlugin(kvp.Key);
+						if (kvp.Value == "1")
+						{
+							if (PluginManager.CanChangeActiveState(kvp.Key))
+								PluginManager.ActivatePlugin(kvp.Key);
+						}
+						if (kvp.Value == "0")
+						{
+							if (PluginManager.CanChangeActiveState(kvp.Key))
+								PluginManager.DeactivatePlugin(kvp.Key);
+						}
 					}
 				}
 
@@ -588,7 +798,7 @@ namespace Nexus.Client.PluginManagement.UI
 		/// <param name="p_lstRegisteredPlugins">The return list of registered plugins.</param>
 		/// <param name="p_lstUnregisteredPlugins">The return list of unregistered plugin filenames.</param>
 		/// <exception cref="InvalidImportSourceException">The value of PluginDirectory for the current game mode is empty.</exception>
-		private void GetRegisteredPlugins(Dictionary<string, string> p_dctPluginFilenames, out Dictionary<Plugin, string> p_kvpRegisteredPlugins, out List<string> p_lstUnregisteredPlugins)
+		public void GetRegisteredPlugins(Dictionary<string, string> p_dctPluginFilenames, out Dictionary<Plugin, string> p_kvpRegisteredPlugins, out List<string> p_lstUnregisteredPlugins)
 		{
 			string strPluginDirectory = CurrentGameMode.PluginDirectory;
 
@@ -606,6 +816,30 @@ namespace Nexus.Client.PluginManagement.UI
 					p_kvpRegisteredPlugins.Add(plgPlugin, kvp.Value);
 				else
 					p_lstUnregisteredPlugins.Add(kvp.Key);
+			}
+		}
+
+		/// <summary>
+		/// Gets a list of registered plugins and unregistered plugin filenames for the specified game mode and list of plugin filenames.
+		/// </summary>
+		/// <param name="p_lstPluginFilenames">The dictionary of plugin filenames.</param>
+		/// <param name="p_kvpOrderedPlugins">The return list of registered plugins.</param>
+		/// <exception cref="InvalidImportSourceException">The value of PluginDirectory for the current game mode is empty.</exception>
+		public void GetRegisteredPlugins(string[] p_lstPluginFilenames, out Dictionary<Plugin, string> p_kvpOrderedPlugins)
+		{
+			string strPluginDirectory = CurrentGameMode.PluginDirectory;
+
+			if (string.IsNullOrEmpty(strPluginDirectory))
+				throw new InvalidImportSourceException(string.Format("The PluginDirectory path of the specified import source game mode, {0}, is empty.", CurrentGameMode));
+
+			p_kvpOrderedPlugins = new Dictionary<Plugin, string>();
+
+			foreach (string filename in p_lstPluginFilenames)
+			{
+				string strPluginPath = Path.Combine(strPluginDirectory, filename);
+				Plugin plgPlugin = PluginManager.GetRegisteredPlugin(strPluginPath);
+				if (plgPlugin != null)
+					p_kvpOrderedPlugins.Add(plgPlugin, "0");
 			}
 		}
 
@@ -642,7 +876,7 @@ namespace Nexus.Client.PluginManagement.UI
 				return;
 			}
 
-			ApplyLoadOrder(kvpRegisteredPlugins);
+			ApplyLoadOrder(kvpRegisteredPlugins, false);
 
 			p_intImportedCount = kvpRegisteredPlugins.Count;
 		}
@@ -651,7 +885,7 @@ namespace Nexus.Client.PluginManagement.UI
 		/// Imports a load order from the specified file.
 		/// </summary>
 		/// <param name="p_strFilename">The filename to import a load order from.</param>
-		protected void ImportLoadOrderFromFile(string p_strFilename)
+		public void ImportLoadOrderFromFile(string p_strFilename)
 		{
 			if (string.IsNullOrEmpty(p_strFilename) || !CurrentGameMode.UsesPlugins)
 				return;

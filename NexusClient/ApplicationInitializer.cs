@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Nexus.Client.ActivateModsMonitoring;
 using Nexus.Client.BackgroundTasks;
 using Nexus.Client.DownloadMonitoring;
 using Nexus.UI.Controls;
@@ -104,7 +105,7 @@ namespace Nexus.Client
 			get
 			{
 				if (m_gmdGameMode == null)
-					throw new InvalidOperationException(String.Format("{0} cannot be accessed until the initializaer has completed it's work.", ObjectHelper.GetPropertyName(() => GameMode)));
+					throw new InvalidOperationException(String.Format("{0} cannot be accessed until the initializer has completed it's work.", ObjectHelper.GetPropertyName(() => GameMode)));
 				return m_gmdGameMode;
 			}
 			private set
@@ -369,10 +370,22 @@ namespace Nexus.Client
 
 			StepOverallProgress();
 
+			if ((gmdGameMode.GameModeEnvironmentInfo.ModCacheDirectory == null) || (gmdGameMode.GameModeEnvironmentInfo.ModDirectory == null))
+			{
+				ShowMessage(new ViewMessage("Unable to retrieve critical paths from the config file." + Environment.NewLine + "Select this game again to fix the folders setup.", "Warning", MessageBoxIcon.Warning));
+				EnvironmentInfo.Settings.CompletedSetup[p_gmfGameModeFactory.GameModeDescriptor.ModeId] = false;
+				EnvironmentInfo.Settings.Save();
+				Status = TaskStatus.Retrying;
+				return false;
+			}
+
 			ServiceManager svmServices = InitializeServices(gmdGameMode, mrpModRepository, nfuFileUtility, p_scxUIContext, out p_vwmErrorMessage);
 			if (svmServices == null)
 			{
-				p_vwmErrorMessage = p_vwmErrorMessage ?? new ViewMessage("Unable to initialize services.", null, "Error", MessageBoxIcon.Error);
+				ShowMessage(p_vwmErrorMessage);
+				EnvironmentInfo.Settings.CompletedSetup[p_gmfGameModeFactory.GameModeDescriptor.ModeId] = false;
+				EnvironmentInfo.Settings.Save();
+				Status = TaskStatus.Retrying;
 				return false;
 			}
 			StepOverallProgress();
@@ -585,7 +598,7 @@ namespace Nexus.Client
 			if (!String.IsNullOrEmpty(p_gmdGameMode.GameModeEnvironmentInfo.OverwriteDirectory) && (!dicPaths.ContainsKey(p_gmdGameMode.GameModeEnvironmentInfo.OverwriteDirectory)))
 				dicPaths[p_gmdGameMode.GameModeEnvironmentInfo.OverwriteDirectory] = "Install Info";
 			if (!String.IsNullOrEmpty(p_gmdGameMode.GameModeEnvironmentInfo.CategoryDirectory) && (!dicPaths.ContainsKey(p_gmdGameMode.GameModeEnvironmentInfo.CategoryDirectory)))
-				dicPaths[p_gmdGameMode.GameModeEnvironmentInfo.CategoryDirectory] = "Categories";
+				dicPaths[p_gmdGameMode.GameModeEnvironmentInfo.CategoryDirectory] = "Mods";
 			if (!String.IsNullOrEmpty(p_gmdGameMode.GameModeEnvironmentInfo.InstallationPath) && (!dicPaths.ContainsKey(p_gmdGameMode.GameModeEnvironmentInfo.InstallationPath)))
 				dicPaths[p_gmdGameMode.GameModeEnvironmentInfo.InstallationPath] = "Install Path";
 
@@ -606,6 +619,19 @@ namespace Nexus.Client
 
 				if (!UacCheck(kvpUacCheckPath.Key))
 				{
+					if (!Directory.Exists(Path.GetPathRoot(kvpUacCheckPath.Key)))
+					{
+						Trace.TraceError("Unable to access: " + kvpUacCheckPath.Key);
+						string strHDMessage = "Unable to access:" + Environment.NewLine + kvpUacCheckPath.Key;
+						string strHDDetails = String.Format("This error usually happens when you set one of the {0} folders on a hard drive that is no longer in your system:" +
+											 Environment.NewLine + Environment.NewLine + "Select this game mode again to go back to the folder setup screen and make sure the {1} path is correct.",
+											EnvironmentInfo.Settings.ModManagerName, kvpUacCheckPath.Value);
+						p_vwmErrorMessage = new ViewMessage(strHDMessage, strHDDetails, "Warning", MessageBoxIcon.Warning);
+						EnvironmentInfo.Settings.CompletedSetup[p_gmdGameMode.ModeId] = false;
+						EnvironmentInfo.Settings.Save();
+						return false;
+					}
+
 					Trace.TraceError("Unable to get write permissions for: " + kvpUacCheckPath.Key);
 					string strMessage = "Unable to get write permissions for:" + Environment.NewLine + kvpUacCheckPath.Key;
 					string strDetails = String.Format("This error happens when you are running Windows Vista or later, and have put {0}'s <b>{1}</b> folder in the <b>Program Files</b> folder. You need to do one of the following:<ol>" +
@@ -744,7 +770,18 @@ namespace Nexus.Client
 
 			Trace.TraceInformation("Finding managed mods...");
 			Trace.Indent();
-			ModRegistry mrgModRegistry = ModRegistry.DiscoverManagedMods(mfrModFormatRegistry, mcmModCacheManager, p_gmdGameMode.GameModeEnvironmentInfo.ModDirectory, EnvironmentInfo.Settings.ScanSubfoldersForMods, p_gmdGameMode, p_gmdGameMode.GameModeEnvironmentInfo.ModCacheDirectory, p_gmdGameMode.GameModeEnvironmentInfo.ModDownloadCacheDirectory, p_gmdGameMode.GameModeEnvironmentInfo.ModReadMeDirectory, p_gmdGameMode.GameModeEnvironmentInfo.CategoryDirectory);
+
+			ModRegistry mrgModRegistry = null;
+			try
+			{
+				mrgModRegistry = ModRegistry.DiscoverManagedMods(mfrModFormatRegistry, mcmModCacheManager, p_gmdGameMode.GameModeEnvironmentInfo.ModDirectory, EnvironmentInfo.Settings.ScanSubfoldersForMods, p_gmdGameMode, p_gmdGameMode.GameModeEnvironmentInfo.ModCacheDirectory, p_gmdGameMode.GameModeEnvironmentInfo.ModDownloadCacheDirectory, p_gmdGameMode.GameModeEnvironmentInfo.ModReadMeDirectory, p_gmdGameMode.GameModeEnvironmentInfo.CategoryDirectory);
+			}
+			catch (UnauthorizedAccessException ex)
+			{
+				p_vwmErrorMessage = new ViewMessage(String.Format("An error occured while retrieving managed mods: \n\n{0}", ex.Message), null, "Install Log", MessageBoxIcon.Error);
+				return null;
+			}
+
 			Trace.TraceInformation("Found {0} managed mods.", mrgModRegistry.RegisteredMods.Count);
 			Trace.Unindent();
 
@@ -752,7 +789,19 @@ namespace Nexus.Client
 			Trace.Indent();
 			Trace.TraceInformation("Checking if upgrade is required...");
 			InstallLogUpgrader iluUgrader = new InstallLogUpgrader();
-			string strLogPath = Path.Combine(p_gmdGameMode.GameModeEnvironmentInfo.InstallInfoDirectory, "InstallLog.xml");
+
+			string strLogPath = string.Empty;
+
+			try
+			{
+				strLogPath = Path.Combine(p_gmdGameMode.GameModeEnvironmentInfo.InstallInfoDirectory, "InstallLog.xml");
+			}
+			catch (ArgumentNullException)
+			{
+				p_vwmErrorMessage = new ViewMessage("Unable to retrieve critical paths from the config file." + Environment.NewLine + "Select this game again to fix the folders setup.", null, "Config error", MessageBoxIcon.Warning);
+				return null;
+			}
+
 			if (!InstallLog.IsLogValid(strLogPath))
 				InstallLog.Restore(strLogPath);
 			if (iluUgrader.NeedsUpgrade(strLogPath))
@@ -817,9 +866,14 @@ namespace Nexus.Client
 			DownloadMonitor dmtMonitor = new DownloadMonitor();
 			Trace.Unindent();
 
+            Trace.TraceInformation("Initializing Activate Mods Monitor...");
+			Trace.Indent();
+			ActivateModsMonitor ammMonitor = new ActivateModsMonitor();
+			Trace.Unindent();
+
 			Trace.TraceInformation("Initializing Mod Manager...");
 			Trace.Indent();
-			ModManager mmgModManager = ModManager.Initialize(p_gmdGameMode, EnvironmentInfo, p_mrpModRepository, dmtMonitor, mfrModFormatRegistry, mrgModRegistry, p_nfuFileUtility, p_scxUIContext, ilgInstallLog, pmgPluginManager);
+            ModManager mmgModManager = ModManager.Initialize(p_gmdGameMode, EnvironmentInfo, p_mrpModRepository, dmtMonitor, ammMonitor, mfrModFormatRegistry, mrgModRegistry, p_nfuFileUtility, p_scxUIContext, ilgInstallLog, pmgPluginManager);
 			Trace.Unindent();
 
 			Trace.TraceInformation("Initializing Update Manager...");
@@ -828,7 +882,7 @@ namespace Nexus.Client
 			Trace.Unindent();
 
 			p_vwmErrorMessage = null;
-			return new ServiceManager(ilgInstallLog, aplPluginLog, polPluginOrderLog, p_mrpModRepository, mmgModManager, pmgPluginManager, dmtMonitor, umgUpdateManager);
+            return new ServiceManager(ilgInstallLog, aplPluginLog, polPluginOrderLog, p_mrpModRepository, mmgModManager, pmgPluginManager, dmtMonitor, ammMonitor, umgUpdateManager);
 		}
 
 		/// <summary>
@@ -924,6 +978,8 @@ namespace Nexus.Client
 		/// <c>false</c> otherwise.</returns>
 		private bool ConfirmMismatchedVersionModUpgrade(IMod p_modOld, IMod p_modNew)
 		{
+			if (String.IsNullOrWhiteSpace(p_modNew.HumanReadableVersion))
+				return false;
 			string strUpgradeMessage = "A different version of {0} has been detected. The installed version is {1}, the new version is {2}. Would you like to upgrade?" + Environment.NewLine + "Selecting No will replace the mod in the mod list, but won't change any files.";
 			switch ((DialogResult)ShowMessage(new ViewMessage(String.Format(strUpgradeMessage, p_modNew.ModName, p_modOld.HumanReadableVersion, p_modNew.HumanReadableVersion), null, "Upgrade", ExtendedMessageBoxButtons.Yes | ExtendedMessageBoxButtons.No, MessageBoxIcon.Question)))
 			{
@@ -1042,10 +1098,10 @@ namespace Nexus.Client
 					}
 
 					string strMessage = String.Format("'{0}' cannot be found. " + Environment.NewLine + Environment.NewLine +
-								"This could be caused by setting the wrong 'Mods' folder or an old config file being used." + Environment.NewLine + Environment.NewLine +
-								"If you haven't deleted or moved any of your mods on your hard-drive and they're still on your hard-drive somewhere then select YES and input the proper location of your Mods folder." + Environment.NewLine + Environment.NewLine +
-								"If you select NO {1} will automatically uninstall the missing mod's files." + Environment.NewLine + Environment.NewLine +
-								"NOTE: The mods folder is where NMM stores your mod archives, it is not the same location as your game's mod folder.", modMissing.Filename, p_eifEnvironmentInfo.Settings.ModManagerName);
+										"This could be caused by setting the wrong 'Mods' folder or an old config file being used." + Environment.NewLine + Environment.NewLine +
+										"If you haven't deleted or moved any of your mods on your hard-drive and they're still on your hard-drive somewhere then select YES and input the proper location of your Mods folder." + Environment.NewLine + Environment.NewLine +
+										"If you select NO {1} will automatically uninstall the missing mod's files." + Environment.NewLine + Environment.NewLine +
+										"NOTE: The mods folder is where NMM stores your mod archives, it is not the same location as your game's mod folder.", modMissing.Filename, p_eifEnvironmentInfo.Settings.ModManagerName);
 					if ((DialogResult)ShowMessage(new ViewMessage(strMessage, "Missing Mod", ExtendedMessageBoxButtons.Yes | ExtendedMessageBoxButtons.No, MessageBoxIcon.Warning)) == DialogResult.No)
 					{
 						Trace.TraceInformation("Removing.");

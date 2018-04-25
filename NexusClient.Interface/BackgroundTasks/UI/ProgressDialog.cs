@@ -179,6 +179,10 @@ namespace Nexus.Client.BackgroundTasks.UI
 				//this can happen if we try to update the form before its handle has been created
 				// we should never get here, but if we do, we don't need to care
 			}
+			catch (ArgumentOutOfRangeException)
+			{
+				// we don't care if that happens
+			}
 		}
 
 		/// <summary>

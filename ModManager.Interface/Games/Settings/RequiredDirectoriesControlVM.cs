@@ -161,7 +161,7 @@ namespace Nexus.Client.Games.Settings
 			m_booRequiredTool = GameModeDescriptor.OrderedRequiredToolFileNames != null;
 			Errors = new ErrorContainer();
 			m_booUseAdditionalChecks = p_booUseAdditionalChecks;
- 		}
+		}
 
 		#endregion
 
@@ -226,7 +226,7 @@ namespace Nexus.Client.Games.Settings
 					}
 				}
 			}
-
+			
 			if (m_booRequiredTool)
 			{
 				Errors.Clear(p_strToolProperty);
@@ -370,12 +370,20 @@ namespace Nexus.Client.Games.Settings
 			string strRegMod = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\NexusModManager\" + GameModeDescriptor.ModeId + " ", "Mods", null);
 			string strRegInst = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\NexusModManager\" + GameModeDescriptor.ModeId + " ", "InstallInfo", null);
 
+			if (!String.IsNullOrWhiteSpace(strRegMod))
+				if (Path.IsPathRooted(strRegMod) && !Directory.Exists(Path.GetPathRoot(strRegMod)))
+					strRegMod = null;
+
+			if (!String.IsNullOrWhiteSpace(strRegInst))
+				if (Path.IsPathRooted(strRegInst) && !Directory.Exists(Path.GetPathRoot(strRegInst)))
+					strRegInst = null;
+
 			string strInstallationPath = EnvironmentInfo.Settings.InstallationPaths[GameModeDescriptor.ModeId];
 			string strDirectory = null;
 			string strRandomGameKey = String.Empty;
 			bool booRetrieved = false;
 
-			if (strRegMod != null)
+			if (!String.IsNullOrWhiteSpace(strRegMod))
 				ModDirectory = strRegMod;
 			else if (EnvironmentInfo.Settings.ModFolder.ContainsKey(GameModeDescriptor.ModeId))
 				ModDirectory = EnvironmentInfo.Settings.ModFolder[GameModeDescriptor.ModeId];
@@ -394,6 +402,11 @@ namespace Nexus.Client.Games.Settings
 					}
 				}
 			}
+
+			if (!String.IsNullOrWhiteSpace(ModDirectory))
+				if (Path.IsPathRooted(ModDirectory) && !Directory.Exists(Path.GetPathRoot(ModDirectory)))
+					ModDirectory = String.Empty;
+
 			if (string.IsNullOrEmpty(ModDirectory))
 			{
 				if (EnvironmentInfo.Settings.DelayedSettings.ContainsKey(GameModeDescriptor.ModeId))
@@ -408,7 +421,7 @@ namespace Nexus.Client.Games.Settings
 				ModDirectory = strDirectory;
 			}
 
-			if (strRegInst != null)
+			if (!String.IsNullOrWhiteSpace(strRegInst))
 				InstallInfoDirectory = strRegInst;
 			else if (EnvironmentInfo.Settings.InstallInfoFolder.ContainsKey(GameModeDescriptor.ModeId))
 				InstallInfoDirectory = EnvironmentInfo.Settings.InstallInfoFolder[GameModeDescriptor.ModeId];
@@ -428,6 +441,11 @@ namespace Nexus.Client.Games.Settings
 					}
 				}
 			}
+
+			if (!String.IsNullOrWhiteSpace(InstallInfoDirectory))
+				if (Path.IsPathRooted(InstallInfoDirectory) && !Directory.Exists(Path.GetPathRoot(InstallInfoDirectory)))
+					InstallInfoDirectory = String.Empty;
+
 			if (String.IsNullOrEmpty(InstallInfoDirectory))
 			{
 				strDirectory = null;

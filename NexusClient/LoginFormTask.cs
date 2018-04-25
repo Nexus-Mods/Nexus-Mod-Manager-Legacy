@@ -189,7 +189,13 @@ namespace Nexus.Client
                 dicAuthTokens.Clear();
             }
 
-            if ((dicAuthTokens.Count == 0) || booCredentialsExpired)
+            if (dicAuthTokens.Count == 0)
+			{
+				Status = TaskStatus.Incomplete;
+				OverallMessage = "Insert login credentials";
+				return false;
+			}
+			else if (booCredentialsExpired)
             {
                 Status = TaskStatus.Incomplete;
 				OverallMessage = "Token expired: insert login credentials";

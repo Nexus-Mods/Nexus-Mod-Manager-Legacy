@@ -341,6 +341,18 @@ namespace Nexus.Client.Games
 		}
 
 		/// <summary>
+		/// Gets the list of official plugin names, ordered by load order.
+		/// </summary>
+		/// <value>The list of official plugin names, ordered by load order.</value>
+		public string[] OrderedOfficialPluginNames
+		{
+			get
+			{
+				return m_gmdGameModeInfo.OrderedOfficialPluginNames;
+			}
+		}
+
+		/// <summary>
 		/// Gets the name of the required tool (if any) for the current game mode.
 		/// </summary>
 		/// <value>The name of the required tool (if any) for the current game mode.</value>
@@ -469,6 +481,30 @@ namespace Nexus.Client.Games
 		public abstract bool UsesPlugins { get; }
 
 		/// <summary>
+		/// Gets whether the game mode supports the automatic sorting
+		/// functionality for plugins.
+		/// </summary>
+		public virtual bool SupportsPluginAutoSorting 
+		{ 
+			get
+			{
+				return false;
+			} 
+		}
+
+		/// <summary>
+		/// Gets the plugin loadorder manager.
+		/// </summary>
+		/// <value>The plugin loadorder manager.</value>
+		public virtual ILoadOrderManager LoadOrderManager 
+		{ 
+			get
+			{
+				return null;
+			}
+		}
+
+		/// <summary>
 		/// Gets the directory where the game plugins are installed.
 		/// </summary>
 		/// <value>The directory where the game plugins are installed.</value>
@@ -537,6 +573,17 @@ namespace Nexus.Client.Games
 			{
 				return false;
 			}
+		}
+
+		/// <summary>
+		/// Whether the plugin sorter is properly initialized.
+		/// </summary>
+		public virtual bool PluginSorterInitialized 
+		{ 
+			get
+			{
+				return false;
+			} 
 		}
 
 		#region Constructors
@@ -716,6 +763,16 @@ namespace Nexus.Client.Games
 		public virtual bool CheckSecondaryInstall(IMod p_modMod)
 		{
 			return false;
+		}
+
+		/// <summary>
+		/// Automatically sorts the given plugin list.
+		/// </summary>
+		/// <returns>The sorted list.</returns>
+		/// <param name="p_lstPlugins">The plugin list to sort.</param>
+		public virtual string[] SortPlugins(IList<Plugin> p_lstPlugins)
+		{
+			return null;
 		}
 
 		/// <summary>

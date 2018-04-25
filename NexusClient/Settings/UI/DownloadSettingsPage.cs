@@ -60,7 +60,7 @@ namespace Nexus.Client.Settings.UI
 			cbxServerLocation.DataSource = bsFileServerZones.DataSource;
 			cbxServerLocation.DisplayMember = "FileServerName";
 			cbxServerLocation.ValueMember = "FileServerID";
-			
+
 			if (cbxServerLocation.DataBindings != null)
 				cbxServerLocation.DataBindings.Clear();
 			BindingHelper.CreateFullBinding(cbxServerLocation, () => cbxServerLocation.SelectedValue, p_dsgSettings, () => p_dsgSettings.UserLocation);

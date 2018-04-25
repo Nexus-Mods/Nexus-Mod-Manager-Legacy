@@ -6,6 +6,8 @@ using Microsoft.Win32;
 using Nexus.Client.Settings;
 using Nexus.Client.UI;
 using Nexus.Client.Util;
+using Nexus.Client.Games.Gamebryo.PluginManagement.Sorter;
+using Nexus.Client.Games.Gamebryo.PluginManagement.LoadOrder;
 
 namespace Nexus.Client.Games.Gamebryo
 {
@@ -105,6 +107,7 @@ namespace Nexus.Client.Games.Gamebryo
 		/// <returns>The game mode.</returns>
 		public IGameMode BuildGameMode(FileUtil p_futFileUtility, out ViewMessage p_imsWarning)
 		{
+			GamebryoGameModeBase gmdGameMode = null;
 			if (EnvironmentInfo.Settings.CustomGameModeSettings[GameModeDescriptor.ModeId] == null)
 				EnvironmentInfo.Settings.CustomGameModeSettings[GameModeDescriptor.ModeId] = new PerGameModeSettings<object>();
 			if (!EnvironmentInfo.Settings.CustomGameModeSettings[GameModeDescriptor.ModeId].ContainsKey("AskAboutReadOnlySettingsFiles"))
@@ -119,13 +122,21 @@ namespace Nexus.Client.Games.Gamebryo
 			m_lstTools.Add(new CheckedCommand<MainForm>("Archive Invalidation", "Toggles Archive Invalidation.", Fallout3.Tools.ArchiveInvalidation.IsActive(), ToggleArchiveInvalidation));
 			*/
 
-			GamebryoGameModeBase gmdGameMode = InstantiateGameMode(p_futFileUtility);
+			try
+			{
+				gmdGameMode = InstantiateGameMode(p_futFileUtility);
 
-			if (!File.Exists(((GamebryoGameModeBase)gmdGameMode).SettingsFiles.IniPath))
-				p_imsWarning = new ViewMessage(String.Format("You have no {0} INI file. Please run {0} to initialize the file before installing any mods or turning on Archive Invalidation.", gmdGameMode.Name), null, "Missing INI", MessageBoxIcon.Warning);
-			else
-				p_imsWarning = null;
-
+				if (!File.Exists(((GamebryoGameModeBase)gmdGameMode).SettingsFiles.IniPath))
+					p_imsWarning = new ViewMessage(String.Format("You have no {0} INI file. Please run {0} to initialize the file before installing any mods or turning on Archive Invalidation.", gmdGameMode.Name), null, "Missing INI", MessageBoxIcon.Warning);
+				else
+					p_imsWarning = null;
+			}
+			catch(SorterException e)
+			{
+				gmdGameMode = null;
+				p_imsWarning = new ViewMessage(String.Format(e.Message), null, "SorterException", MessageBoxIcon.Error);
+			}
+			
 			return gmdGameMode;
 		}
 

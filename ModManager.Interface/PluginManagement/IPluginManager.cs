@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using Nexus.Client.BackgroundTasks;
 using Nexus.Client.Plugins;
+using Nexus.Client.UI;
 using Nexus.Client.Util.Collections;
 
 namespace Nexus.Client.PluginManagement
@@ -129,6 +131,15 @@ namespace Nexus.Client.PluginManagement
 		/// <c>false</c> otherwise.</returns>
 		bool CanChangeActiveState(Plugin p_plgPlugin);
 
+		/// <summary>
+		/// Runs the managed updaters.
+		/// </summary>
+		/// <param name="p_hashMods">The hash of mods.</param>
+		/// <param name="p_booEnable">Enable/Disable/Toggle.</param>
+		/// <param name="p_camConfirm">The delegate to call to confirm an action.</param>
+		/// <returns>The background task that will run the updaters.</returns>
+		IBackgroundTask ManageMultiplePluginsTask(List<Plugin> p_lstPlugins, bool p_booEnable, ConfirmActionMethod p_camConfirm);
+
 		#endregion
 
 		#region Plugin Ordering
@@ -166,6 +177,13 @@ namespace Nexus.Client.PluginManagement
 		bool ValidateOrder(IList<Plugin> p_lstPlugins);
 
 		#endregion
+
+		/// <summary>
+		/// Automatically sorts the managed plugins.
+		/// </summary>
+		/// <param name="p_camConfirm">The delegate to call to confirm an action.</param>
+		/// <returns>The background task that will run the sorting.</returns>
+		IBackgroundTask AutoPluginSorting(ConfirmActionMethod p_camConfirm);
 
 		/// <summary>
 		/// Determines if the specified file is a plugin that can be activated for the game mode.

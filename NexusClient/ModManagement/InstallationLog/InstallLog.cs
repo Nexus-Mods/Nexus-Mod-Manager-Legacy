@@ -547,8 +547,9 @@ namespace Nexus.Client.ModManagement.InstallationLog
 			foreach (KeyValuePair<string, IMod> kvpMod in GetInstallLogModInfo())
 			{
 				IMod modRegistered = GetMod(kvpMod.Key);
-				if ((modRegistered != null) && File.Exists(modRegistered.ModArchivePath) && !String.Equals(modRegistered.HumanReadableVersion ?? "", kvpMod.Value.HumanReadableVersion ?? ""))
-					yield return new KeyValuePair<IMod, IMod>(kvpMod.Value, modRegistered);
+				if ((modRegistered != null) && File.Exists(modRegistered.ModArchivePath) && !String.Equals(modRegistered.HumanReadableVersion ?? "", kvpMod.Value.HumanReadableVersion ?? "", StringComparison.InvariantCultureIgnoreCase))
+					if (!String.IsNullOrWhiteSpace(modRegistered.HumanReadableVersion))
+						yield return new KeyValuePair<IMod, IMod>(kvpMod.Value, modRegistered);
 			}
 		}
 

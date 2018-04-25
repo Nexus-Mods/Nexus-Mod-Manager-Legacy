@@ -15,7 +15,7 @@ namespace Nexus.Client
 	{
 		private LoginFormVM m_vmlViewModel = null;
 
-		private LoginFormTask m_lftLoginTask = null;
+        private LoginFormTask m_lftLoginTask = null;
 
 		#region Events
 
@@ -62,12 +62,12 @@ namespace Nexus.Client
 		/// </summary>
 		/// <param name="p_vmlViewModel">The view model that provides the data and operations for this view.</param>
 		public LoginForm(LoginFormVM p_vmlViewModel, LoginFormTask p_lftLoginTask)
-		{
+        {
 			InitializeComponent();
 			lblError.Visible = true;
 			lblError.TextChanged += new EventHandler(lblError_TextChanged);
-			this.FormClosed += new FormClosedEventHandler(LoginForm_FormClosed);
-			m_lftLoginTask = p_lftLoginTask;
+            this.FormClosed += new FormClosedEventHandler(LoginForm_FormClosed);
+            m_lftLoginTask = p_lftLoginTask;
 			ViewModel = p_vmlViewModel;
 		}
 
@@ -118,20 +118,20 @@ namespace Nexus.Client
 		/// <param name="e">An <see cref="EventArgs"/> describing the event arguments.</param>
 		private void butCancel_Click(object sender, EventArgs e)
 		{
-			m_lftLoginTask.Reset();
-			DialogResult = DialogResult.No;
+            m_lftLoginTask.Reset();
+            DialogResult = DialogResult.No;
 		}
 
 		private void butOffline_Click(object sender, EventArgs e)
 		{
-			m_lftLoginTask.Reset();
-			DialogResult = DialogResult.No;
+            m_lftLoginTask.Reset();
+            DialogResult = DialogResult.No;
 		}
 
-		private void LoginForm_FormClosed(object sender, EventArgs e)
+         private void LoginForm_FormClosed(object sender, EventArgs e)
 		{
 			if (!m_lftLoginTask.LoggedIn)
 				m_lftLoginTask.Reset();
-		}
+ 		}
 	}
 }

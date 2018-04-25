@@ -1,8 +1,17 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Threading;
+using Nexus.Client.Commands.Generic;
+using Nexus.Client.TipsManagement;
+using System.Text;
 using System.Windows.Forms;
+using Nexus.Client.ActivateModsMonitoring.UI;
 using Nexus.Client.BackgroundTasks;
 using Nexus.Client.BackgroundTasks.UI;
 using Nexus.Client.Commands;
@@ -12,14 +21,12 @@ using Nexus.Client.Games;
 using Nexus.Client.Games.Tools;
 using Nexus.Client.ModManagement;
 using Nexus.Client.ModManagement.UI;
-using Nexus.Client.ModRepositories.Nexus;
 using Nexus.Client.PluginManagement.UI;
 using Nexus.Client.Settings.UI;
 using Nexus.Client.UI;
 using Nexus.Client.Util;
 using WeifenLuo.WinFormsUI.Docking;
 using System.Diagnostics;
-using System.Text;
 
 namespace Nexus.Client
 {
@@ -34,7 +41,23 @@ namespace Nexus.Client
 		private PluginManagerControl pmcPluginManager = null;
 		private DownloadMonitorControl dmcDownloadMonitor = null;
 		private double m_dblDefaultActivityManagerAutoHidePortion = 0;
+        private double m_dblDefaultActivationMonitorAutoHidePortion = 0;
 		public string strOptionalPremiumMessage = string.Empty;
+        private ActivateModsMonitorControl amcActivateModsMonitor = null;
+		
+		private ToolStripMenuItem tmiShowTips = null;
+
+		private System.Windows.Forms.TextBox caption;
+		private System.Windows.Forms.TextBox content;
+		private System.Windows.Forms.Label anchor;
+		private System.Windows.Forms.Button showForm;
+
+		FormWindowState LastWindowState = FormWindowState.Minimized;
+		private bool m_booShowLastBaloon = false;
+		private BalloonManager bmBalloon = null;
+
+		private string m_strSelectedTipsVersion = String.Empty;
+        private string m_strTempBackupFolder = string.Empty;
 
 		#region Properties
 
@@ -53,6 +76,9 @@ namespace Nexus.Client
 			{
 				m_vmlViewModel = value;
 				mmgModManager.ViewModel = m_vmlViewModel.ModManagerVM;
+
+                amcActivateModsMonitor.ViewModel = m_vmlViewModel.ActivateModsMonitorVM;
+
 				if (ViewModel.UsesPlugins)
 					pmcPluginManager.ViewModel = m_vmlViewModel.PluginManagerVM;
 				dmcDownloadMonitor.ViewModel = m_vmlViewModel.DownloadMonitorVM;
@@ -78,6 +104,11 @@ namespace Nexus.Client
 					spbHelp.DropDownItems.Add(tmiHelp);
 				}
 
+				bmBalloon = new BalloonManager(ViewModel.UsesPlugins);
+				bmBalloon.ShowNextClick += bmBalloon_ShowNextClick;
+				bmBalloon.ShowPreviousClick += bmBalloon_ShowPreviousClick;
+				bmBalloon.CloseClick += bmBalloon_CloseClick;
+
 				BindCommands();
 			}
 		}
@@ -97,14 +128,24 @@ namespace Nexus.Client
 
 			this.FormClosing += new FormClosingEventHandler(this.CheckDownloadsOnClosing);
 
+			this.ResizeEnd += MainForm_ResizeEnd;
+			this.ResizeBegin += MainForm_ResizeBegin;
+			this.Resize += MainForm_Resize;
+
 			pmcPluginManager = new PluginManagerControl();
 			mmgModManager = new ModManagerControl();
 			dmcDownloadMonitor = new DownloadMonitorControl();
 			dockPanel1.ActiveContentChanged += new EventHandler(dockPanel1_ActiveContentChanged);
 			mmgModManager.SetTextBoxFocus += new EventHandler(mmgModManager_SetTextBoxFocus);
 			mmgModManager.ResetSearchBox += new EventHandler(mmgModManager_ResetSearchBox);
+			mmgModManager.UpdateModsCount += new EventHandler(mmgModManager_UpdateModsCount);
 			dmcDownloadMonitor.SetTextBoxFocus += new EventHandler(dmcDownloadMonitor_SetTextBoxFocus);
+			pmcPluginManager.UpdatePluginsCount += new EventHandler(pmcPluginManager_UpdatePluginsCount);
+			amcActivateModsMonitor = new ActivateModsMonitorControl();
+			amcActivateModsMonitor.EmptyQueue += new EventHandler(amcActivateModsMonitor_EmptyQueue);
+			amcActivateModsMonitor.UpdateBottomBarFeedback += new EventHandler(amcActivateModsMonitor_UpdateBottomBarFeedback);
 			p_vmlViewModel.ModManager.LoginTask.PropertyChanged += new PropertyChangedEventHandler(LoginTask_PropertyChanged);
+			tsbTips.DropDownItemClicked += new ToolStripItemClickedEventHandler(tsbTips_DropDownItemClicked);
 
 			ViewModel = p_vmlViewModel;
 
@@ -137,8 +178,12 @@ namespace Nexus.Client
 			if (ViewModel.EnvironmentInfo.Settings.DockPanelLayouts.ContainsKey("mainForm") && !String.IsNullOrEmpty(ViewModel.EnvironmentInfo.Settings.DockPanelLayouts["mainForm"]))
 			{
 				dockPanel1.LoadFromXmlString(ViewModel.EnvironmentInfo.Settings.DockPanelLayouts["mainForm"], LoadDockedContent);
-				if (m_dblDefaultActivityManagerAutoHidePortion == 0)
-					m_dblDefaultActivityManagerAutoHidePortion = dmcDownloadMonitor.AutoHidePortion;
+				try
+				{
+					if (m_dblDefaultActivityManagerAutoHidePortion == 0)
+						m_dblDefaultActivityManagerAutoHidePortion = dmcDownloadMonitor.AutoHidePortion;
+				}
+				catch { }
 				if (!ViewModel.UsesPlugins)
 					pmcPluginManager.Hide();
 			}
@@ -147,12 +192,30 @@ namespace Nexus.Client
 				if (ViewModel.UsesPlugins)
 					pmcPluginManager.DockState = DockState.Unknown;
 				mmgModManager.DockState = DockState.Unknown;
-				dmcDownloadMonitor.DockState = DockState.Unknown;
-				dmcDownloadMonitor.ShowHint = DockState.DockBottomAutoHide;
-				dmcDownloadMonitor.Show(dockPanel1, DockState.DockBottomAutoHide);
+
+                dmcDownloadMonitor.DockState = DockState.Unknown;
+                dmcDownloadMonitor.ShowHint = DockState.DockBottom;
+                dmcDownloadMonitor.Show(dockPanel1, DockState.DockBottom);
+
 				if (m_dblDefaultActivityManagerAutoHidePortion == 0)
 					m_dblDefaultActivityManagerAutoHidePortion = dmcDownloadMonitor.Height;
-				dmcDownloadMonitor.AutoHidePortion = m_dblDefaultActivityManagerAutoHidePortion;
+				try
+				{
+					dmcDownloadMonitor.AutoHidePortion = m_dblDefaultActivityManagerAutoHidePortion;
+				}
+				catch { }
+
+                amcActivateModsMonitor.DockState = DockState.Unknown;
+                amcActivateModsMonitor.ShowHint = DockState.DockBottom;
+                amcActivateModsMonitor.Show(dockPanel1, DockState.DockBottom);
+                                                
+                if (m_dblDefaultActivationMonitorAutoHidePortion == 0)
+                    m_dblDefaultActivationMonitorAutoHidePortion = amcActivateModsMonitor.Height;
+                try
+                {
+                    amcActivateModsMonitor.AutoHidePortion = m_dblDefaultActivationMonitorAutoHidePortion;
+                }
+                catch { }
 
 				if (ViewModel.UsesPlugins)
 					pmcPluginManager.Show(dockPanel1);
@@ -171,14 +234,199 @@ namespace Nexus.Client
 
 			if ((dmcDownloadMonitor == null) || ((dmcDownloadMonitor.VisibleState == DockState.Unknown) || (dmcDownloadMonitor.VisibleState == DockState.Hidden)))
 			{
-				dmcDownloadMonitor.Show(dockPanel1, DockState.DockBottomAutoHide);
+                dmcDownloadMonitor.Show(dockPanel1, DockState.DockBottom);
 				if (m_dblDefaultActivityManagerAutoHidePortion == 0)
 					m_dblDefaultActivityManagerAutoHidePortion = dmcDownloadMonitor.Height;
-				dmcDownloadMonitor.AutoHidePortion = m_dblDefaultActivityManagerAutoHidePortion;
+				try
+				{
+					dmcDownloadMonitor.AutoHidePortion = m_dblDefaultActivityManagerAutoHidePortion;
+				}
+				catch { }
 			}
+
+            if ((amcActivateModsMonitor == null) || ((amcActivateModsMonitor.VisibleState == DockState.Unknown) || (amcActivateModsMonitor.VisibleState == DockState.Hidden)))
+			{
+                amcActivateModsMonitor.Show(dockPanel1, DockState.DockBottom);
+				if (m_dblDefaultActivationMonitorAutoHidePortion == 0)
+					m_dblDefaultActivationMonitorAutoHidePortion = amcActivateModsMonitor.Height;
+				try
+				{
+					amcActivateModsMonitor.AutoHidePortion = m_dblDefaultActivationMonitorAutoHidePortion;
+				}
+				catch { }
+			}
+
+            amcActivateModsMonitor.DockTo(dmcDownloadMonitor.Pane, DockStyle.Right, 1);
+
+			if (ViewModel.UsesPlugins)
+			{
+				tlbPluginsCounter.Text = "  Total plugins: " + ViewModel.PluginManagerVM.ManagedPlugins.Count + "   |   Active plugins: ";
+
+				FontFamily myFontFamily = new FontFamily(tlbActivePluginsCounter.Font.Name);
+
+				if (ViewModel.PluginManagerVM.ActivePlugins.Count > ViewModel.PluginManagerVM.MaxAllowedActivePluginsCount)
+				{
+					Icon icoIcon = new Icon(SystemIcons.Warning, 16, 16);
+					tlbActivePluginsCounter.Image = icoIcon.ToBitmap();
+					tlbActivePluginsCounter.ForeColor = Color.Red;
+
+					if (myFontFamily.IsStyleAvailable(FontStyle.Bold))
+						tlbActivePluginsCounter.Font = new Font(tlbActivePluginsCounter.Font, FontStyle.Bold);
+					else if (myFontFamily.IsStyleAvailable(FontStyle.Regular))
+						tlbActivePluginsCounter.Font = new Font(tlbActivePluginsCounter.Font, FontStyle.Regular);
+
+					tlbActivePluginsCounter.Text = ViewModel.PluginManagerVM.ActivePlugins.Count.ToString();
+					tlbActivePluginsCounter.ToolTipText = String.Format("Too many active plugins! {0} won't start!", ViewModel.CurrentGameModeName);
+				}
+				else
+				{
+					tlbActivePluginsCounter.Image = null;
+					tlbActivePluginsCounter.ForeColor = Color.Black;
+					if (myFontFamily.IsStyleAvailable(FontStyle.Regular))
+						tlbActivePluginsCounter.Font = new Font(tlbActivePluginsCounter.Font, FontStyle.Regular);
+					else if (myFontFamily.IsStyleAvailable(FontStyle.Bold))
+						tlbActivePluginsCounter.Font = new Font(tlbActivePluginsCounter.Font, FontStyle.Bold);
+
+					tlbActivePluginsCounter.Text = ViewModel.PluginManagerVM.ActivePlugins.Count.ToString();
+				}
+
+			}
+			else
+			{
+				tlbPluginSeparator.Visible = false;
+				tlbPluginsCounter.Visible = false;
+			}
+
+			tlbModsCounter.Text = "  Total mods: " + ViewModel.ModManagerVM.ManagedMods.Count + "   |   Active mods: " + ViewModel.ModManager.ActiveMods.Count;
 
 			UserStatusFeedback();
 		}
+
+		/// <summary>
+		/// The function that checks the Tips.
+		/// </summary>
+		protected void LoadTips()
+		{
+			bmBalloon.CheckTips(this.Location.X + tsbTips.Bounds.Location.X, this.Location.Y + tsbTips.Bounds.Location.Y, ViewModel.EnvironmentInfo.Settings.CheckForTipsOnStartup, ProgrammeMetadata.VersionString);
+		}
+
+		/// <summary>
+		/// Shows the tips.
+		/// </summary>
+		/// <param name="p_strVersion">The version of the DropDownMenu clicked</param>
+		public void ShowTips(string p_strVersion)
+		{
+			if (!String.IsNullOrEmpty(p_strVersion))
+				bmBalloon.SetTipList(p_strVersion);
+			string strTipSection = String.IsNullOrEmpty(bmBalloon.TipSection) ? "toolStrip1" : bmBalloon.TipSection;
+			string strTipObject = String.IsNullOrEmpty(bmBalloon.TipObject) ? "tsbTips" : bmBalloon.TipObject;
+			bmBalloon.ShowNextTip(FindControlCoords(strTipSection, strTipObject));
+		}
+
+        /// <summary>
+        /// Managing the LoadBackup status.
+        /// </summary>
+        void amcActivateModsMonitor_EmptyQueue(object sender, EventArgs e)
+		{
+			if (ViewModel.UsesPlugins)
+				if (File.Exists(Path.Combine(m_strTempBackupFolder, "loadorder.txt")))
+					pmcPluginManager.ViewModel.ImportLoadOrderFromFile(Path.Combine(m_strTempBackupFolder, "loadorder.txt"));
+
+			FileUtil.ForceDelete(m_strTempBackupFolder);
+	
+			mmgModManager.SetCommandBackupMMCStatus(true);
+			SetCommandBackupMFStatus(true);
+			amcActivateModsMonitor.SetCommandBackupAMCStatus(true);
+			pmcPluginManager.SetCommandBackupPlugCStatus(true);
+		}
+
+        /// <summary>
+		/// During the backup enables/disables the Main Form icons.
+		/// </summary>
+		private void SetCommandBackupMFStatus(bool p_booCheck)
+		{
+			tsbUpdate.Enabled = p_booCheck;
+			spbChangeMode.Enabled = p_booCheck;
+			tsbSettings.Enabled = p_booCheck;
+			spbTools.DropDownItems[1].Enabled = p_booCheck;
+			spbTools.DropDownItems[2].Enabled = p_booCheck;
+		}
+
+		/// <summary>
+		/// The BalloonManager ShowNextClick event.
+		/// </summary>
+		void bmBalloon_ShowNextClick(object sender, EventArgs e)
+		{
+			if (m_vmlViewModel.EnvironmentInfo.Settings.CheckForTipsOnStartup)
+			{
+				m_vmlViewModel.EnvironmentInfo.Settings.CheckForTipsOnStartup = false;
+				m_vmlViewModel.EnvironmentInfo.Settings.Save();
+			}
+
+			if (bmBalloon.CurrentTip == null)
+				ShowTips(m_vmlViewModel.EnvironmentInfo.ApplicationVersion.ToString());
+			else
+				ShowTips(String.Empty);
+		}
+
+		/// <summary>
+		/// The BalloonManager ShowPreviousClick event.
+		/// </summary>
+		void bmBalloon_ShowPreviousClick(object sender, EventArgs e)
+		{
+			ShowTips(String.Empty);
+		}
+
+		/// <summary>
+		/// The BalloonManager CloseClick event.
+		/// </summary>
+		void bmBalloon_CloseClick(object sender, EventArgs e)
+		{
+			if (m_vmlViewModel.EnvironmentInfo.Settings.CheckForTipsOnStartup)
+			{
+				m_vmlViewModel.EnvironmentInfo.Settings.CheckForTipsOnStartup = false;
+				m_vmlViewModel.EnvironmentInfo.Settings.Save();
+			}
+		}
+
+        /// <summary>
+		/// Load the backup file.
+		/// </summary>
+		protected void RestoreBackup()
+		{
+			OpenFileDialog ofd = new OpenFileDialog();
+			if (ofd.ShowDialog() == DialogResult.OK)
+			{
+				DialogResult Result = MessageBox.Show("Are you sure to restore this backup?", "Restore Backup", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+				if (Result == DialogResult.Yes)
+				{
+                    UninstallAllMods(true);
+					
+					mmgModManager.SetCommandBackupMMCStatus(false);
+					SetCommandBackupMFStatus(false);
+					amcActivateModsMonitor.SetCommandBackupAMCStatus(false);
+					pmcPluginManager.SetCommandBackupPlugCStatus(false);
+					
+					if (!mmgModManager.LoadListOnDemand(ofd.FileName, out m_strTempBackupFolder))
+					{
+						mmgModManager.SetCommandBackupMMCStatus(true);
+						SetCommandBackupMFStatus(true);
+						amcActivateModsMonitor.SetCommandBackupAMCStatus(true);
+						pmcPluginManager.SetCommandBackupPlugCStatus(true);
+					}
+
+				}
+			}
+		}
+
+        /// <summary>
+		/// Uninstall all active mods.
+		/// </summary>
+		protected void UninstallAllMods(bool booForceUninstall)
+		{
+			mmgModManager.DeactivateAllMods(booForceUninstall);
+		}
+
 
 		/// <summary>
 		/// Sets the UI elements providing feedback on the user online status.
@@ -253,11 +501,25 @@ namespace Nexus.Client
 		}
 
 		/// <summary>
+		/// Automatically sorts the plugin list.
+		/// </summary>
+		protected void SortPlugins()
+		{
+			if (ViewModel.PluginSorterInitialized)
+				ViewModel.SortPlugins();
+			else
+				MessageBox.Show("Nexus Mod Manager was unable to properly initialize the Automatic Sorting functionality." +
+					Environment.NewLine + Environment.NewLine + "This game is not supported or something is wrong with your loadorder.txt or plugins.txt files," +
+					Environment.NewLine + "or one or more plugins are corrupt/broken.",
+					"Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+		}
+
+		/// <summary>
 		/// Uninstall all active mods.
 		/// </summary>
 		protected void UninstallAllMods()
 		{
-			mmgModManager.DeactivateAllMods();
+            mmgModManager.DeactivateAllMods(false);
 		}
 
 		private void LoginTask_PropertyChanged(object sender, EventArgs e)
@@ -294,6 +556,79 @@ namespace Nexus.Client
 				if (drFormClose != DialogResult.Yes)
 					e.Cancel = true;
 			}
+
+            if (ViewModel.IsInstalling)
+			{
+				DialogResult drFormClose = MessageBox.Show("You cannot close NMM because there is an ongoing mod installation!", "Closing", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+					e.Cancel = true;
+			}
+		}
+
+        /// <summary>
+		/// The Main Form resizeEnd event.
+		/// </summary>
+		private void MainForm_ResizeEnd(object sender, EventArgs e)
+		{
+			if ((ViewModel.EnvironmentInfo.Settings.CheckForTipsOnStartup) && (bmBalloon.balloonHelp != null))
+			{
+				bmBalloon.balloonHelp.Close();
+				bmBalloon.CheckTips(this.Location.X + tsbTips.Bounds.Location.X, this.Location.Y + tsbTips.Bounds.Location.Y, ViewModel.EnvironmentInfo.Settings.CheckForTipsOnStartup, ProgrammeMetadata.VersionString);
+			}
+			else
+			{
+				if (m_booShowLastBaloon)
+				{
+					m_booShowLastBaloon = false;
+					ShowTips(String.Empty);
+				}
+			}
+		}
+
+        /// <summary>
+		/// The Main Form resizeBegin event.
+		/// </summary>
+		private void MainForm_ResizeBegin(object sender, EventArgs e)
+		{
+			if (bmBalloon.balloonHelp != null)
+ 			{
+				if (bmBalloon.balloonHelp.Visible)
+				{
+					if (bmBalloon.CurrentTip != null)
+						bmBalloon.SetPreviousTip(true);
+					bmBalloon.balloonHelp.Close();
+					m_booShowLastBaloon = true;
+				}
+				else
+					m_booShowLastBaloon = false;
+			}
+		}
+
+        /// <summary>
+		/// The Main Form resize event.
+		/// </summary>
+		private void MainForm_Resize(object sender, EventArgs e)
+		{
+			if (WindowState != LastWindowState)
+			{
+				LastWindowState = WindowState;
+
+				if ((WindowState == FormWindowState.Maximized) || (WindowState == FormWindowState.Normal))
+				{
+					if ((bmBalloon != null) && (bmBalloon.balloonHelp != null) && (bmBalloon.balloonHelp.Visible))
+					{
+						if (bmBalloon.CurrentTip != null)
+						{
+							bmBalloon.SetPreviousTip(true);
+							ShowTips(String.Empty);
+						}
+						else
+						{
+							bmBalloon.balloonHelp.Close();
+							bmBalloon.CheckTips(this.Location.X + tsbTips.Bounds.Location.X, this.Location.Y + tsbTips.Bounds.Location.Y, ViewModel.EnvironmentInfo.Settings.CheckForTipsOnStartup, ProgrammeMetadata.VersionString);
+						}
+					}
+				}
+			}
 		}
 
 		/// <summary>
@@ -316,9 +651,86 @@ namespace Nexus.Client
 			tstFind.Focus();
 		}
 
+        /// <summary>
+		/// The Main Form resetSearchBox event.
+		/// </summary>
 		private void mmgModManager_ResetSearchBox(object sender, EventArgs e)
 		{
 			tstFind.Clear();
+		}
+
+		/// <summary>
+		/// Updates the Mods Counter
+		/// </summary>
+		private void mmgModManager_UpdateModsCount(object sender, EventArgs e)
+		{
+			tlbModsCounter.Text = "  Total mods: " + ViewModel.ModManagerVM.ManagedMods.Count + "   |   Active mods: " + ViewModel.ModManager.ActiveMods.Count;
+		}
+
+		/// <summary>
+		/// Updates the Plugins Counter
+		/// </summary>
+		private void pmcPluginManager_UpdatePluginsCount(object sender, EventArgs e)
+		{
+			tlbPluginsCounter.Text = "  Total plugins: " + ViewModel.PluginManagerVM.ManagedPlugins.Count + "   |   Active plugins: ";
+			
+			if (ViewModel.PluginManagerVM.ActivePlugins.Count > ViewModel.PluginManagerVM.MaxAllowedActivePluginsCount)
+			{
+				Icon icoIcon = new Icon(SystemIcons.Warning, 16, 16);
+				tlbActivePluginsCounter.Image = icoIcon.ToBitmap();
+				tlbActivePluginsCounter.ForeColor = Color.Red;
+				tlbActivePluginsCounter.Font = new Font(tlbActivePluginsCounter.Font, FontStyle.Bold);
+				tlbActivePluginsCounter.Text = ViewModel.PluginManagerVM.ActivePlugins.Count.ToString();
+				tlbActivePluginsCounter.ToolTipText = String.Format("Too many active plugins! {0} won't start!", ViewModel.CurrentGameModeName); ;
+			}
+			else
+			{
+				tlbActivePluginsCounter.Image = null;
+				tlbActivePluginsCounter.Font = new Font(tlbActivePluginsCounter.Font, FontStyle.Regular);
+				tlbActivePluginsCounter.ForeColor = Color.Black;
+				tlbActivePluginsCounter.Text = ViewModel.PluginManagerVM.ActivePlugins.Count.ToString();
+			}
+ 		}
+
+		/// <summary>
+		/// Updates the Bottom Bar Queue Feedback
+		/// </summary>
+		private void amcActivateModsMonitor_UpdateBottomBarFeedback(object sender, EventArgs e)
+		{
+			UpgradeBottomBarFeedbackCounter();
+			if (sender != null)
+			{
+				if (ViewModel.IsInstalling)
+				{
+					ActivateModsListViewItem lwiListViewItem = (ActivateModsListViewItem)sender;
+					if (lwiListViewItem.Task != null)
+					{
+						tsbLoader.Visible = true;
+						tlbBottomBarFeedbackCounter.Visible = true;
+
+						if (!lwiListViewItem.Task.IsQueued)
+						{
+							if (lwiListViewItem.Task.GetType() == typeof(ModInstaller))
+								tlbBottomBarFeedback.Text = "Mod Activation: Installing ";
+							else if (lwiListViewItem.Task.GetType() == typeof(ModUninstaller))
+								tlbBottomBarFeedback.Text = "Mod Activation: Uninstalling ";
+							else if (lwiListViewItem.Task.GetType() == typeof(ModUpgrader))
+								tlbBottomBarFeedback.Text = "Mod Activation: Upgrading ";
+						}
+					}
+					else
+					{
+						tlbBottomBarFeedback.Text = "Idle";
+						tsbLoader.Visible = false;
+					}
+				}
+				else
+				{
+					tsbLoader.Visible = false;
+					tlbBottomBarFeedbackCounter.Visible = false;
+					tlbBottomBarFeedback.Text = "Idle";
+				}
+			}
 		}
 
 		/// <summary>
@@ -331,6 +743,23 @@ namespace Nexus.Client
 		}
 
 		/// <summary>
+		/// Updates the Bottom Bar Queue Counter
+		/// </summary>
+		private void UpgradeBottomBarFeedbackCounter()
+		{
+			int intCompletedTasks = amcActivateModsMonitor.ViewModel.Tasks.Count(x => x.IsCompleted == true);
+
+			if (amcActivateModsMonitor.ViewModel.Tasks.Count == 0)
+			{
+				tlbBottomBarFeedbackCounter.Text = "";
+				tlbBottomBarFeedback.Text = "";
+				tsbLoader.Visible = false;
+			}
+			else
+				tlbBottomBarFeedbackCounter.Text = "(" + intCompletedTasks + "/" + amcActivateModsMonitor.ViewModel.Tasks.Count + ")";
+		}
+
+		/// <summary>
 		/// Opens NMM's mods folder for the current game.
 		/// </summary>
 		protected void OpenModsFolder()
@@ -339,6 +768,9 @@ namespace Nexus.Client
 				System.Diagnostics.Process.Start(ViewModel.ModsPath);
 		}
 
+        /// <summary>
+		/// The Find KeyUp event.
+		/// </summary>
 		private void tstFind_KeyUp(object sender, KeyEventArgs e)
 		{
 			mmgModManager.FindItemWithText(this.tstFind.Text);
@@ -588,6 +1020,8 @@ namespace Nexus.Client
 				return mmgModManager;
 			else if (p_strContentId == typeof(DownloadMonitorControl).ToString())
 				return dmcDownloadMonitor;
+            else if (p_strContentId == typeof(ActivateModsMonitorControl).ToString())
+				return amcActivateModsMonitor;
 			else
 				return null;
 		}
@@ -687,6 +1121,36 @@ namespace Nexus.Client
 			new ToolStripItemCommandBinding(tmiResetTool, cmdResetUI);
 			spbTools.DropDownItems.Add(tmiResetTool);
 
+			Command cmdLoadBackup = new Command("Restore Backup", "Restore the backup.", RestoreBackup);
+			ToolStripMenuItem tmiLoadBackupTool = new ToolStripMenuItem();
+			tmiResetTool.ImageScaling = ToolStripItemImageScaling.None;
+			new ToolStripItemCommandBinding(tmiLoadBackupTool, cmdLoadBackup);
+			spbTools.DropDownItems.Add(tmiLoadBackupTool);
+
+			if (ViewModel.UsesPlugins)
+			{
+				Command cmdSortPlugins = new Command("Automatic Plugin Sorting", "Automatically sorts the plugin list.", SortPlugins);
+				ToolStripMenuItem tmicmdSortPluginsTool = new ToolStripMenuItem();
+				tmicmdSortPluginsTool.ImageScaling = ToolStripItemImageScaling.None;
+				new ToolStripItemCommandBinding(tmicmdSortPluginsTool, cmdSortPlugins);
+				spbTools.DropDownItems.Add(tmicmdSortPluginsTool);
+			}
+
+			IEnumerable<string> enuVersions = bmBalloon.GetVersionList();
+			if (enuVersions != null)
+			{
+				foreach (string strVersion in enuVersions)
+				{
+					Command<string> cmdShowTips = new Command<string>(strVersion, "Shows the tips for the current version.", ShowTips);
+					tmiShowTips = new ToolStripMenuItem();
+					tmiShowTips.ImageScaling = ToolStripItemImageScaling.None;
+					tmiShowTips.Image = global::Nexus.Client.Properties.Resources.tipsIcon;
+					new ToolStripItemCommandBinding<string>(tmiShowTips, cmdShowTips, GetSelectedVersion);
+
+					tsbTips.DropDownItems.Add(tmiShowTips);
+				}
+			}
+
 			Command cmdUninstallAllMods = new Command("Uninstall all active mods", "Uninstalls all active mods.", UninstallAllMods);
 			ToolStripMenuItem tmiUninstallAllMods = new ToolStripMenuItem();
 			tmiUninstallAllMods.Image = global::Nexus.Client.Properties.Resources.edit_delete;
@@ -703,6 +1167,21 @@ namespace Nexus.Client
 				tolTool.CloseToolView += new EventHandler<DisplayToolViewEventArgs>(Tool_CloseToolView);
 				spbTools.DropDownItems.Add(tmiTool);
 			}
+		}
+
+		private void tsbTips_DropDownItemClicked(object sender, ToolStripItemClickedEventArgs e)
+		{
+			m_strSelectedTipsVersion = e.ClickedItem.Text;
+		}
+
+		private string GetSelectedVersion()
+		{
+			return m_strSelectedTipsVersion;
+		}
+
+		private void close_Click(object sender, System.EventArgs e)
+		{
+			Close();
 		}
 
 		/// <summary>
@@ -757,7 +1236,136 @@ namespace Nexus.Client
 		/// <param name="e">An <see cref="EventArgs"/> describing the event arguments.</param>
 		private void tsbGoPremium_Click(object sender, EventArgs e)
 		{
-			Process.Start(NexusLinks.Premium);
+			System.Diagnostics.Process.Start("http://skyrim.nexusmods.com/users/premium/");
+		}
+
+		private Point FindControlCoords(string p_section, string p_object)
+		{
+			Point pCoords = new Point(0, 0);
+			ToolStripItem rootItem = null;
+			Control root = null;
+
+			switch (p_section)
+			{
+				case "PluginManagerControl":
+				case "ModManagerControl": 
+					root = this.Controls.Find(p_section, true)[0];
+					if (root.TabIndex == 2)
+					{
+						if (root.ContainsFocus)
+							pCoords.X = root.AccessibilityObject.Bounds.Location.X;
+						else
+							pCoords.X = root.Width + root.AccessibilityObject.Bounds.Location.X;
+					}
+					else
+					{
+						if (root.ContainsFocus)
+							pCoords.X = root.AccessibilityObject.Bounds.Location.X + 60;
+						
+						else
+							pCoords.X = root.Width + root.AccessibilityObject.Bounds.Location.X + 60;
+					}
+
+					pCoords.Y = root.AccessibilityObject.Bounds.Location.Y - 60;
+
+					break;
+				
+				case "toolStrip1":
+					root = this.Controls.Find(p_section, true)[0];
+					rootItem = ((ToolStrip)root).Items.Find(p_object, true)[0];
+					pCoords.X = rootItem.AccessibilityObject.Bounds.Location.X - 10;
+					pCoords.Y = rootItem.AccessibilityObject.Bounds.Location.Y - 30;
+					break;
+
+				case "tssDownload":
+					root = this.Controls.Find(p_section, true)[0];
+					rootItem = ((StatusStrip)root).Items.Find(p_object, true)[0];
+					if (rootItem.Visible)
+					{
+						pCoords.X = rootItem.AccessibilityObject.Bounds.Location.X - 10;
+						pCoords.Y = rootItem.AccessibilityObject.Bounds.Location.Y - 60;
+					}
+					break;
+
+				case "ModManager.toolStrip1":
+					p_section = "toolStrip1";
+					root = mmgModManager.Controls.Find(p_section, true)[0];
+					rootItem = ((ToolStrip)root).Items.Find(p_object, true)[0];
+					pCoords.X = rootItem.AccessibilityObject.Bounds.Location.X - 5;
+					pCoords.Y = rootItem.AccessibilityObject.Bounds.Location.Y - 10;
+					break;
+
+				case "DownloadManager.toolStrip1":
+					p_section = "toolStrip1";
+					root = dmcDownloadMonitor.Controls.Find(p_section, true)[0];
+					rootItem = ((ToolStrip)root).Items.Find(p_object, true)[0];
+
+					switch (dmcDownloadMonitor.DockState)
+					{
+						case DockState.DockBottomAutoHide:
+							dmcDownloadMonitor.DockState = DockState.DockBottom;
+							break;
+						case DockState.DockLeftAutoHide:
+							dmcDownloadMonitor.DockState = DockState.DockLeft;
+							break;
+						case DockState.DockRightAutoHide:
+							dmcDownloadMonitor.DockState = DockState.DockRight;
+							break;
+						case DockState.DockTopAutoHide:
+							dmcDownloadMonitor.DockState = DockState.DockTop;
+							break;
+					}
+
+					if (!dmcDownloadMonitor.Visible)
+						dmcDownloadMonitor.Show();
+					pCoords.X = rootItem.AccessibilityObject.Bounds.Location.X - 10;
+					pCoords.Y = rootItem.AccessibilityObject.Bounds.Location.Y - 40;
+					break;
+
+				case "CLWCategoryListView":
+					pCoords.X = mmgModManager.clwCategoryView.AccessibilityObject.Bounds.Location.X;
+					pCoords.Y = mmgModManager.clwCategoryView.AccessibilityObject.Bounds.Location.Y - 40;
+					break;
+
+                    case "ActivateMMListView":
+
+                    switch (amcActivateModsMonitor.DockState)
+					{
+						case DockState.DockBottomAutoHide:
+                            amcActivateModsMonitor.DockState = DockState.DockBottom;
+							break;
+						case DockState.DockLeftAutoHide:
+                            amcActivateModsMonitor.DockState = DockState.DockLeft;
+							break;
+						case DockState.DockRightAutoHide:
+                            amcActivateModsMonitor.DockState = DockState.DockRight;
+							break;
+						case DockState.DockTopAutoHide:
+                            amcActivateModsMonitor.DockState = DockState.DockTop;
+							break;
+					}
+
+                    if (!amcActivateModsMonitor.Visible)
+                        amcActivateModsMonitor.Show();
+
+                    pCoords.X = amcActivateModsMonitor.AccessibilityObject.Bounds.Location.X + 20;
+                    pCoords.Y = amcActivateModsMonitor.AccessibilityObject.Bounds.Location.Y - 70;
+					break;
+
+                case "ActivateModsMonitorControl.toolStrip1":
+                    p_section = "toolStrip1";
+                    root = amcActivateModsMonitor.Controls.Find(p_section, true)[0];
+                    rootItem = ((ToolStrip)root).Items.Find(p_object, true)[0];
+
+                    if (rootItem.Visible)
+                    {
+                        pCoords.X = rootItem.AccessibilityObject.Bounds.Location.X - 10;
+                        pCoords.Y = rootItem.AccessibilityObject.Bounds.Location.Y - 40;
+                    }
+                    break;
+			}
+
+			return pCoords;
 		}
 
 		#endregion
@@ -992,6 +1600,8 @@ namespace Nexus.Client
 			base.OnResize(e);
 			if (WindowState != FormWindowState.Minimized)
 				m_fwsLastWindowState = WindowState;
+			else if ((bmBalloon != null) && (bmBalloon.balloonHelp != null) && (bmBalloon.balloonHelp.Visible))
+				bmBalloon.balloonHelp.Close();
 		}
 
 		/// <summary>
@@ -1006,6 +1616,7 @@ namespace Nexus.Client
 			base.OnShown(e);
 			ShowStartupMessage();
 			ViewModel.ViewIsShown();
+			LoadTips();
 		}
 
 		#endregion
@@ -1015,7 +1626,7 @@ namespace Nexus.Client
 		/// </summary>
 		private void ShowStartupMessage()
 		{
-			if  (ViewModel.EnvironmentInfo.Settings.ShowStartupMessage)
+			if (ViewModel.EnvironmentInfo.Settings.ShowStartupMessage)
 			{
 				StringBuilder stbWarning = new StringBuilder();
 				stbWarning.AppendLine("Recently some spam emails have been doing the rounds about a new version of the Nexus Mod Manager, telling you to upgrade to the latest version.");

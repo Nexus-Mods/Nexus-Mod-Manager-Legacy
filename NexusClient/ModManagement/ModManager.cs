@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using Nexus.Client.ActivateModsMonitoring;
 using Nexus.Client.BackgroundTasks;
 using Nexus.Client.DownloadMonitoring;
 using Nexus.Client.Games;
@@ -54,11 +57,11 @@ namespace Nexus.Client.ModManagement
 		/// <returns>The initialized mod manager.</returns>
 		/// <exception cref="InvalidOperationException">Thrown if the mod manager has already
 		/// been initialized.</exception>
-		public static ModManager Initialize(IGameMode p_gmdGameMode, IEnvironmentInfo p_eifEnvironmentInfo, IModRepository p_mrpModRepository, DownloadMonitor p_dmrMonitor, IModFormatRegistry p_frgFormatRegistry, ModRegistry p_mrgModRegistry, FileUtil p_futFileUtility, SynchronizationContext p_scxUIContext, IInstallLog p_ilgInstallLog, IPluginManager p_pmgPluginManager)
+        public static ModManager Initialize(IGameMode p_gmdGameMode, IEnvironmentInfo p_eifEnvironmentInfo, IModRepository p_mrpModRepository, DownloadMonitor p_dmrMonitor, ActivateModsMonitor p_ammMonitor, IModFormatRegistry p_frgFormatRegistry, ModRegistry p_mrgModRegistry, FileUtil p_futFileUtility, SynchronizationContext p_scxUIContext, IInstallLog p_ilgInstallLog, IPluginManager p_pmgPluginManager)	
 		{
 			if (m_mmgCurrent != null)
 				throw new InvalidOperationException("The Mod Manager has already been initialized.");
-			m_mmgCurrent = new ModManager(p_gmdGameMode, p_eifEnvironmentInfo, p_mrpModRepository, p_dmrMonitor, p_frgFormatRegistry, p_mrgModRegistry, p_futFileUtility, p_scxUIContext, p_ilgInstallLog, p_pmgPluginManager);
+            m_mmgCurrent = new ModManager(p_gmdGameMode, p_eifEnvironmentInfo, p_mrpModRepository, p_dmrMonitor, p_ammMonitor, p_frgFormatRegistry, p_mrgModRegistry, p_futFileUtility, p_scxUIContext, p_ilgInstallLog, p_pmgPluginManager);
 			return m_mmgCurrent;
 		}
 
@@ -77,12 +80,17 @@ namespace Nexus.Client.ModManagement
 		private ModActivator m_macModActivator = null;
 		private ReadMeManager m_rmmReadMeManager = null;
 
-		/// <summary>
+		#region Properties
+
+        public event EventHandler<EventArgs<IBackgroundTask>> UpdateCheckStarted = delegate { };
+
+        public List<ModBackupInfo> lstMBInfo = new List<ModBackupInfo>();
+		public bool IsBackupActive = false;
+
+        /// <summary>
 		/// The loginform Task.
 		/// </summary>
 		public LoginFormTask LoginTask;
-
-		#region Properties
 
 		/// <summary>
 		/// Gets the application's envrionment info.
@@ -125,6 +133,12 @@ namespace Nexus.Client.ModManagement
 		/// </summary>
 		/// <value>The download monitor to use to display status.</value>
 		protected DownloadMonitor DownloadMonitor { get; private set; }
+
+        /// <summary>
+		/// Gets the activate mods monitor to use to display status.
+		/// </summary>
+		/// <value>The download monitor to use to display status.</value>
+		public ActivateModsMonitor ActivateModsMonitor { get; private set; }
 
 		/// <summary>
 		/// Gets the <see cref="ModInstallerFactory"/> to use to create
@@ -294,7 +308,7 @@ namespace Nexus.Client.ModManagement
 		/// <param name="p_scxUIContext">The <see cref="SynchronizationContext"/> to use to marshall UI interactions to the UI thread.</param>
 		/// <param name="p_ilgInstallLog">The install log tracking mod activations for the current game mode.</param>
 		/// <param name="p_pmgPluginManager">The plugin manager to use to work with plugins.</param>
-		private ModManager(IGameMode p_gmdGameMode, IEnvironmentInfo p_eifEnvironmentInfo, IModRepository p_mrpModRepository, DownloadMonitor p_dmrMonitor, IModFormatRegistry p_frgFormatRegistry, ModRegistry p_mdrManagedModRegistry, FileUtil p_futFileUtility, SynchronizationContext p_scxUIContext, IInstallLog p_ilgInstallLog, IPluginManager p_pmgPluginManager)
+        private ModManager(IGameMode p_gmdGameMode, IEnvironmentInfo p_eifEnvironmentInfo, IModRepository p_mrpModRepository, DownloadMonitor p_dmrMonitor, ActivateModsMonitor p_ammMonitor, IModFormatRegistry p_frgFormatRegistry, ModRegistry p_mdrManagedModRegistry, FileUtil p_futFileUtility, SynchronizationContext p_scxUIContext, IInstallLog p_ilgInstallLog, IPluginManager p_pmgPluginManager)
 		{
 			GameMode = p_gmdGameMode;
 			EnvironmentInfo = p_eifEnvironmentInfo;
@@ -303,11 +317,12 @@ namespace Nexus.Client.ModManagement
 			FormatRegistry = p_frgFormatRegistry;
 			ManagedModRegistry = p_mdrManagedModRegistry;
 			InstallationLog = p_ilgInstallLog;
-			InstallerFactory = new ModInstallerFactory(p_gmdGameMode, p_eifEnvironmentInfo, p_futFileUtility, p_scxUIContext, p_ilgInstallLog, p_pmgPluginManager);
+            InstallerFactory = new ModInstallerFactory(p_gmdGameMode, p_eifEnvironmentInfo, p_futFileUtility, p_scxUIContext, p_ilgInstallLog, p_pmgPluginManager, this);
 			DownloadMonitor = p_dmrMonitor;
+            ActivateModsMonitor = p_ammMonitor;
 			ModAdditionQueue = new AddModQueue(p_eifEnvironmentInfo, this);
 			AutoUpdater = new AutoUpdater(p_mrpModRepository, p_mdrManagedModRegistry, p_eifEnvironmentInfo);
-			LoginTask = new LoginFormTask(this);
+            LoginTask = new LoginFormTask(this);
 		}
 
 		#endregion
@@ -321,25 +336,18 @@ namespace Nexus.Client.ModManagement
 		/// <returns><c>true</c> if the user was successfully logged in;
 		/// <c>false</c> otherwise</returns>
 		public bool Login()
-		{
+        {
 			if (LoginTask.LoggedOut)
 				LoginTask.Update();
 			else if (LoginTask.LoggingIn)
 				MessageBox.Show("Wait for the login attempt.", "Login in progress...",MessageBoxButtons.OK, MessageBoxIcon.Information);
 			return LoginTask.LoggedIn;
-		}
+ 		}
 
-		/// <summary>
-		/// Logins the user into the current mod repository.
-		/// </summary>
-		/// <param name="p_gmdGameMode">The current game mode.</param>
-		/// <param name="p_mrpModRepository">The mod repository to use to retrieve mods and mod metadata.</param>
-		/// <returns><c>true</c> if the user was successfully logged in;
-		/// <c>false</c> otherwise</returns>
 		public void Logout()
-		{
-			LoginTask.Reset();
-		}
+        {
+            LoginTask.Reset();
+ 		}
 
 		#endregion
 
@@ -363,7 +371,7 @@ namespace Nexus.Client.ModManagement
 				else
 				{
 					Login();
-					return ModAdditionQueue.AddMod(uriPath, p_cocConfirmOverwrite);
+                    return AsyncAddMod(uriPath, p_cocConfirmOverwrite);
 				}
 			}
 			else
@@ -399,6 +407,7 @@ namespace Nexus.Client.ModManagement
 			ModDeleter mddDeleter = InstallerFactory.CreateDelete(p_modMod, p_rolActiveMods);
 			mddDeleter.TaskSetCompleted += new EventHandler<TaskSetCompletedEventArgs>(Deactivator_TaskSetCompleted);
 			mddDeleter.Install();
+			DeleteXMLInstalledFile(p_modMod);
 			return mddDeleter;
 		}
 
@@ -430,6 +439,7 @@ namespace Nexus.Client.ModManagement
 		{
 			if (InstallationLog.ActiveMods.Contains(p_modMod))
 				return null;
+			DeleteXMLInstalledFile(p_modMod);
 			return Activator.Activate(p_modMod, p_dlgUpgradeConfirmationDelegate, p_dlgOverwriteConfirmationDelegate, p_rolActiveMods);
 		}
 
@@ -479,6 +489,7 @@ namespace Nexus.Client.ModManagement
 				return null;
 			ModUninstaller munUninstaller = InstallerFactory.CreateUninstaller(p_modMod, p_rolActiveMods);
 			munUninstaller.Install();
+			DeleteXMLInstalledFile(p_modMod);
 			return munUninstaller;
 		}
 
@@ -503,7 +514,7 @@ namespace Nexus.Client.ModManagement
 		/// Toggles the endorsement for the given mod.
 		/// </summary>
 		/// <param name="p_modMod">The mod to endorse/unendorse.</param>
-		public void ToggleModEndorsement(IMod p_modMod)
+        public void ToggleModEndorsement(IMod p_modMod)
 		{
 			AutoUpdater.ToggleModEndorsement(p_modMod);
 		}
@@ -550,6 +561,120 @@ namespace Nexus.Client.ModManagement
 			return dmmDeactivateAllMods;
 		}
 
+        #region asyncTag
+
+        public async void AsyncTagMod(ModManagement.UI.ModManagerVM p_ModManagerVM,  ModManagement.UI.ModTaggerVM p_ModTaggerVM, EventHandler<EventArgs<ModManagement.UI.ModTaggerVM>> p_TaggingMod)
+        {
+            int intRetry = 0;
+
+            while (intRetry < 5)
+            {
+                await Task.Delay(3000);
+                if (LoginTask.LoggedIn)
+                {
+                    p_TaggingMod(p_ModManagerVM, new EventArgs<ModManagement.UI.ModTaggerVM>(p_ModTaggerVM));
+                    break;
+                }
+                else
+                    intRetry++;
+            }
+        }
+
+        #endregion
+
+        #region asyncAddMod
+
+        public IBackgroundTask AsyncAddMod(Uri p_uriPath,ConfirmOverwriteCallback p_cocConfirmOverwrite)
+        {
+            IBackgroundTask tskAddModTask = ModAdditionQueue.AddMod(p_uriPath, p_cocConfirmOverwrite);
+            AsyncAddModTask(tskAddModTask);
+            return tskAddModTask;
+        }
+
+        public async void AsyncAddModTask(IBackgroundTask p_tskAddModTask)
+        {
+            int intRetry = 0;
+
+            while (intRetry < 5)
+            {
+                await Task.Delay(3000);
+                if (LoginTask.LoggedIn)
+                {
+                    if (p_tskAddModTask.Status == BackgroundTasks.TaskStatus.Paused)
+                        p_tskAddModTask.Resume();
+                    break;
+                }
+                else
+                {
+                    intRetry++;
+                }              
+            }
+        }
+
+        #endregion
+
+        #region asyncUpdate
+
+        /// <summary>
+        /// Runs the managed updaters.
+        /// </summary>
+        /// <param name="p_lstModList">The list of mods we need to update.</param>
+        /// <param name="p_camConfirm">The delegate to call to confirm an action.</param>
+        /// <param name="p_booOverrideCategorySetup">Whether to force a global update.</param>
+        /// <returns>The background task that will run the updaters.</returns>
+        public void AsyncUpdateMods(List<IMod> p_lstModList, ConfirmActionMethod p_camConfirm, bool p_booOverrideCategorySetup)
+        {
+            ModUpdateCheckTask mutModUpdateCheck = new ModUpdateCheckTask(AutoUpdater, ModRepository, p_lstModList, p_booOverrideCategorySetup);
+            AsyncUpdateModsTask(mutModUpdateCheck, p_camConfirm);
+        }
+        
+        public async Task AsyncUpdateModsTask(ModUpdateCheckTask p_mutModUpdateCheck, ConfirmActionMethod p_camConfirm)
+        {
+            int intRetry = 0;
+
+            while (intRetry < 5)
+            {
+                await Task.Delay(3000);
+                if (LoginTask.LoggedIn)
+                {
+                    p_mutModUpdateCheck.Update(p_camConfirm);
+                    UpdateCheckStarted(this, new EventArgs<IBackgroundTask>(p_mutModUpdateCheck));
+                    break;
+                }
+                else
+                    intRetry++;
+            }
+        }
+
+       #endregion 
+
+
+        #region asyncEndorse
+
+		/// <summary>
+		/// Async toggle of the endorsement for the given mod.
+		/// </summary>
+		/// <param name="p_modMod">The mod to endorse/unendorse.</param>
+		public async void AsyncEndorseMod(IMod p_modMod)
+        {
+			int intRetry = 0;
+
+			while (intRetry < 5)
+			{
+				await Task.Delay(3000);
+				if (LoginTask.LoggedIn)
+				{
+					AutoUpdater.ToggleModEndorsement(p_modMod);
+					break;
+				}
+				else
+					intRetry++;
+			}
+        }
+
+        #endregion
+
+
 		/// <summary>
 		/// Runs the managed updaters.
 		/// </summary>
@@ -578,5 +703,15 @@ namespace Nexus.Client.ModManagement
 		}
 
 		#endregion
+
+		/// <summary>
+		/// If the mod is scripted, deletes the XMLInstalledFiles file inside the InstallInfo\Scripted folder.
+		/// </summary>
+		private void DeleteXMLInstalledFile(IMod p_modMod)
+		{
+			string strInstallFilesPath = Path.Combine(Path.Combine(GameMode.GameModeEnvironmentInfo.InstallInfoDirectory, "Scripted"), Path.GetFileNameWithoutExtension(p_modMod.Filename)) + ".xml";
+			if (File.Exists(strInstallFilesPath))
+				FileUtil.ForceDelete(strInstallFilesPath);
+		}
 	}
 }

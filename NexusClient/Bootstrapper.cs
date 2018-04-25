@@ -202,7 +202,7 @@ namespace Nexus.Client
 					IGameMode gmdGameMode = ainInitializer.GameMode;
 					ServiceManager svmServices = ainInitializer.Services;
 
-					MainFormVM vmlMainForm = new MainFormVM(m_eifEnvironmentInfo, gmrInstalledGames, gmdGameMode, svmServices.ModRepository, svmServices.DownloadMonitor, svmServices.UpdateManager, svmServices.ModManager, svmServices.PluginManager);
+                    MainFormVM vmlMainForm = new MainFormVM(m_eifEnvironmentInfo, gmrInstalledGames, gmdGameMode, svmServices.ModRepository, svmServices.DownloadMonitor, svmServices.ActivateModsMonitor, svmServices.UpdateManager, svmServices.ModManager, svmServices.PluginManager);
 					MainForm frmMain = new MainForm(vmlMainForm);
 
 					using (IMessager msgMessager = MessagerServer.InitializeListener(m_eifEnvironmentInfo, gmdGameMode, svmServices.ModManager, frmMain))
@@ -260,7 +260,7 @@ namespace Nexus.Client
 			{
 				new XmlSerializer(typeof(WindowPositions));
 			}
-			catch (InvalidOperationException e)
+			catch (InvalidOperationException)
 			{
 
 				string strMessage = "{0} has detected that it is running in a sandbox." + Environment.NewLine +
@@ -272,7 +272,7 @@ namespace Nexus.Client
 				ExtendedMessageBox.Show(null, String.Format(strMessage, p_eifEnvironmentInfo.Settings.ModManagerName), "Sandbox Detected", String.Format(strDetails, p_eifEnvironmentInfo.Settings.ModManagerName), MessageBoxButtons.OK, MessageBoxIcon.Warning);
 				return false;
 			}
-			catch (System.Runtime.InteropServices.ExternalException e)
+			catch (System.Runtime.InteropServices.ExternalException)
 			{
 				string strMessage = "{0} has detected that it is running in a sandbox." + Environment.NewLine +
 								"The sandbox is preventing {0} from performing" + Environment.NewLine +

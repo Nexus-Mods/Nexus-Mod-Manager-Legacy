@@ -17,6 +17,8 @@ namespace Nexus.Client.ModManagement
 	/// </summary>
 	public class ModUninstaller : ModInstallerBase
 	{
+		private ModManager m_mmModManager = null;
+
 		#region Properties
 
 		/// <summary>
@@ -24,6 +26,36 @@ namespace Nexus.Client.ModManagement
 		/// </summary>
 		/// <value>The mod being installed.</value>
 		protected IMod Mod { get; set; }
+
+        /// <summary>
+        /// Gets or sets the mod name.
+        /// </summary>
+        /// <value>The mod name.</value>
+        public string ModName
+        {
+            get
+            {
+                if (Mod != null)
+                    return Mod.ModName;
+                else
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the mod file name.
+        /// </summary>
+        /// <value>The mod file name.</value>
+        public string ModFileName
+        {
+            get
+            {
+                if (Mod != null)
+                    return Mod.Filename;
+                else
+                    return null;
+            }
+        }
 
 		/// <summary>
 		/// Gets the current game mode.
@@ -67,7 +99,7 @@ namespace Nexus.Client.ModManagement
 		/// for the current game mode</param>
 		/// <param name="p_pmgPluginManager">The plugin manager.</param>
 		/// <param name="p_rolActiveMods">The list of active mods.</param>
-		public ModUninstaller(IMod p_modMod, IGameMode p_gmdGameMode, IEnvironmentInfo p_eifEnvironmentInfo, IInstallLog p_ilgModInstallLog, IPluginManager p_pmgPluginManager, ReadOnlyObservableList<IMod> p_rolActiveMods)
+        public ModUninstaller(IMod p_modMod, IGameMode p_gmdGameMode, IEnvironmentInfo p_eifEnvironmentInfo, IInstallLog p_ilgModInstallLog, IPluginManager p_pmgPluginManager, ReadOnlyObservableList<IMod> p_rolActiveMods, ModManager p_mmModManager)
 		{
 			Mod = p_modMod;
 			GameMode = p_gmdGameMode;
@@ -75,6 +107,7 @@ namespace Nexus.Client.ModManagement
 			ModInstallLog = p_ilgModInstallLog;
 			PluginManager = p_pmgPluginManager;
 			ActiveMods = p_rolActiveMods;
+            m_mmModManager = p_mmModManager;
 		}
 
 		#endregion
@@ -84,11 +117,11 @@ namespace Nexus.Client.ModManagement
 		/// </summary>
 		public void Install()
 		{
-			if (!ModInstallLog.ActiveMods.Contains(Mod))
-			{
-				OnTaskSetCompleted(true, "The mod was successfully deactivated.", Mod);
-				return;
-			}
+            if (!ModInstallLog.ActiveMods.Contains(Mod))
+            {
+                OnTaskSetCompleted(true, "The mod was successfully deactivated.", Mod);
+                return;
+            }
 			TrackedThread thdWorker = new TrackedThread(RunTasks);
 			thdWorker.Thread.IsBackground = false;
 			thdWorker.Start();
@@ -110,7 +143,8 @@ namespace Nexus.Client.ModManagement
 			// hence the lock.
 			bool booSuccess = false;
 			string strErrorMessage = String.Empty;
-			lock (objInstallLock)
+
+			lock (objUninstallLock)
 			{
 				using (TransactionScope tsTransaction = new TransactionScope())
 				{
@@ -122,9 +156,11 @@ namespace Nexus.Client.ModManagement
 						Mod.InstallDate = null;
 						ModInstallLog.RemoveMod(Mod);
 						tsTransaction.Complete();
+						GC.GetTotalMemory(true);
 					}
 				}
 			}
+
 			if (booSuccess)
 				OnTaskSetCompleted(booSuccess, "The mod was successfully deactivated." + Environment.NewLine + strErrorMessage, Mod);
 			else
@@ -145,7 +181,7 @@ namespace Nexus.Client.ModManagement
 			p_strErrorMessage = null;
 			IDataFileUtil dfuDataFileUtility = new DataFileUtil(GameMode.GameModeEnvironmentInfo.InstallationPath);
 
-			IModFileInstaller mfiFileInstaller = new ModFileInstaller(GameMode.GameModeEnvironmentInfo, Mod, ModInstallLog, PluginManager, dfuDataFileUtility, p_tfmFileManager, null, GameMode.UsesPlugins);
+            IModFileInstaller mfiFileInstaller = new ModFileInstaller(GameMode.GameModeEnvironmentInfo, Mod, ModInstallLog, PluginManager, dfuDataFileUtility, p_tfmFileManager, null, GameMode.UsesPlugins, m_mmModManager);
 			IIniInstaller iniIniInstaller = new IniInstaller(Mod, ModInstallLog, p_tfmFileManager, null);
 			IGameSpecificValueInstaller gviGameSpecificValueInstaller = GameMode.GetGameSpecificValueInstaller(Mod, ModInstallLog, p_tfmFileManager, new NexusFileUtil(EnvironmentInfo), null);
 
@@ -157,9 +193,12 @@ namespace Nexus.Client.ModManagement
 
 			if (mfiFileInstaller.InstallErrors.Count > 0)
 			{
-				p_strErrorMessage = Environment.NewLine + "The manager was unable to remove these files:" + Environment.NewLine;
+				p_strErrorMessage = Environment.NewLine + "There were issues while installing/uninstalling this mod:" + Environment.NewLine;
 				foreach (string strPath in mfiFileInstaller.InstallErrors)
-					p_strErrorMessage += strPath + Environment.NewLine;
+					DetailsErrorMessage += strPath + Environment.NewLine;
+
+				PopupErrorMessage = p_strErrorMessage;
+				PopupErrorMessageType = butTask.strPopupErrorMessageType;
 			}
 
 			mfiFileInstaller.FinalizeInstall();

@@ -124,7 +124,7 @@ namespace Nexus.Client.Util.Downloader
 						Regex rgxFilename = new Regex("filename=([^;]+)");
 						Match mchFilename = rgxFilename.Match(p_whcFileHeader.GetValues(strKey)[0]);
 						if (mchFilename.Success)
-							SuggestedFileName = Uri.UnescapeDataString(mchFilename.Groups[1].Value.Trim("\"".ToCharArray()));
+							SuggestedFileName = mchFilename.Groups[1].Value.Trim("\"".ToCharArray());
 						break;
 					case "Content-Length":
 						if (Length == 0)

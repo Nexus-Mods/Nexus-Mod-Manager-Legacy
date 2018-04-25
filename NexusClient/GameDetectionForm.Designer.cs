@@ -146,9 +146,9 @@
 		private System.Windows.Forms.Panel panel1;
 		private Nexus.Client.UI.Controls.GameModeListView gameModeListView1;
 		private System.Windows.Forms.Button butCancel;
-		private System.Windows.Forms.Button butOK;
-		private System.Windows.Forms.Label lblInfo;
 		private System.Windows.Forms.Button butStopSearching;
 		private System.Windows.Forms.Button butQuickStartup;
+		private System.Windows.Forms.Button butOK;
+		private System.Windows.Forms.Label lblInfo;
 	}
 }

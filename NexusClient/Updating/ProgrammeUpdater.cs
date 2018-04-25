@@ -16,10 +16,39 @@ namespace Nexus.Client.Updating
 	/// </summary>
 	public class ProgrammeUpdater : UpdaterBase
 	{
+
+		private class ExtendedWebClient : WebClient
+		{
+			private int m_intDefaultTimeout = 30000;
+
+			public Int32 CustomTimeout 
+			{ 
+				get
+				{
+					return m_intDefaultTimeout;
+				}
+				set
+				{
+					m_intDefaultTimeout = value;
+				}
+			}
+
+			public ExtendedWebClient() : this(30000) { }
+
+			public ExtendedWebClient(int p_intTimeout)
+			{
+				this.m_intDefaultTimeout = p_intTimeout;
+			}
+
+			protected override WebRequest GetWebRequest(Uri uri)
+			{
+				WebRequest w = base.GetWebRequest(uri);
+				w.Timeout = m_intDefaultTimeout;
+				return w;
+			}
+		}
+
 		private bool m_booIsAutoCheck = false;
-		private string m_strUpdateUrlLegacy = NexusLinks.UpdaterLegacy;
-		private string m_strUpdateUrl45 = NexusLinks.Updater4dot5;
-		private bool m_booForceLegacy = (Environment.OSVersion.Version.Major <= 5);
 
 		#region Properties
 
@@ -60,110 +89,86 @@ namespace Nexus.Client.Updating
 		/// <c>false</c> otherwise.</returns>
 		public override bool Update()
 		{
-			bool booUpgrade = false;
 			Trace.TraceInformation("Checking for new client version...");
 			Trace.Indent();
-			SetProgressMaximum(4);
+			SetProgressMaximum(2);
+			SetMessage(String.Format("Checking for new {0} version...", EnvironmentInfo.Settings.ModManagerName));
 			string strDownloadUri = String.Empty;
-			Version verNew = new Version("0.0.0");
-			if (!m_booForceLegacy && !(!EnvironmentInfo.Settings.IgnoreAlternateVersion && m_booIsAutoCheck))
+			Version verNew = GetNewProgrammeVersion(out strDownloadUri);
+			SetProgress(1);
+
+			if (CancelRequested)
 			{
-				SetProgress(1);
-
-				SetMessage(String.Format("Checking for new {0} official version...", EnvironmentInfo.Settings.ModManagerName));
-				verNew = GetNewProgrammeVersion(m_strUpdateUrl45 + "latestversion.php", out strDownloadUri);
-				if (!((verNew == new Version("0.0.0")) || (verNew == new Version("69.69.69.69"))))
-				{
-					StringBuilder stbUpgradePromptMessage = new StringBuilder();
-					DialogResult drUpgradeResult = DialogResult.No;
-
-					stbUpgradePromptMessage.AppendFormat("A new official version of {0} is available ({1}).{2}Would you like to download the upgrade and install it?", EnvironmentInfo.Settings.ModManagerName, verNew, Environment.NewLine).AppendLine();
-					stbUpgradePromptMessage.AppendLine();
-					stbUpgradePromptMessage.AppendLine("Click NO if you wish to stick to the legacy version.");
-					stbUpgradePromptMessage.AppendLine("Should you change your mind you can click the 'Update Nexus Mod Manager' button on the top right corner of the UI.");
-					stbUpgradePromptMessage.AppendLine();
-					stbUpgradePromptMessage.AppendLine("NOTE: Installation of the .Net Framework 4.5 is mandatory for the new version to work:");
-					stbUpgradePromptMessage.AppendLine("https://go.microsoft.com/fwlink/?LinkId=225702");
-					stbUpgradePromptMessage.AppendLine();
-					stbUpgradePromptMessage.AppendLine();
-					stbUpgradePromptMessage.AppendLine("You can find the change log for the new release here:");
-					stbUpgradePromptMessage.AppendLine(NexusLinks.Releases4dot5);
-
-					try
-					{
-						//the extended message box contains an activex control wich must be run in an STA thread,
-						// we can't control what thread this gets called on, so create one if we need to
-						ThreadStart actShowMessage = () => drUpgradeResult = ExtendedMessageBox.Show(null, stbUpgradePromptMessage.ToString(), "Upgrade available", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
-						ApartmentState astState = ApartmentState.Unknown;
-						Thread.CurrentThread.TrySetApartmentState(astState);
-						if (astState == ApartmentState.STA)
-							actShowMessage();
-						else
-						{
-							Thread thdMessage = new Thread(actShowMessage);
-							thdMessage.SetApartmentState(ApartmentState.STA);
-							thdMessage.Start();
-							thdMessage.Join();
-						}
-
-					}
-					catch
-					{
-					}
-
-					SetProgress(2);
-
-					if (drUpgradeResult == DialogResult.Cancel)
-					{
-						Trace.Unindent();
-						return CancelUpdate();
-					}
-					else if (drUpgradeResult == DialogResult.No)
-					{
-						EnvironmentInfo.Settings.IgnoreAlternateVersion = true;
-						EnvironmentInfo.Settings.Save();
-						strDownloadUri = String.Empty;
-					}
-					else
-						booUpgrade = true;
-				}
+				Trace.Unindent();
+				return CancelUpdate();
 			}
 
-			if (!booUpgrade)
+			if (verNew == new Version("69.69.69.69"))
 			{
-				SetMessage(String.Format("Checking for new {0} legacy version...", EnvironmentInfo.Settings.ModManagerName));
-				verNew = GetNewProgrammeVersion(m_strUpdateUrlLegacy + "latestversion.php", out strDownloadUri);
+				SetMessage("Could not get version information from the update server.");
+				return false;
+			}
 
-				SetProgress(3);
+			StringBuilder stbPromptMessage = new StringBuilder();
+			DialogResult drResult = DialogResult.No;
 
-				if (CancelRequested)
+			if ((verNew > new Version(ProgrammeMetadata.VersionString)) && !String.IsNullOrEmpty(strDownloadUri))
+			{
+				stbPromptMessage.AppendFormat("A new version of {0} is available ({1}).{2}Would you like to download and install it?", EnvironmentInfo.Settings.ModManagerName, verNew, Environment.NewLine).AppendLine();
+				stbPromptMessage.AppendLine();
+				stbPromptMessage.AppendLine();
+				stbPromptMessage.AppendLine("NOTE: You can find the change log for the new release here:");
+				stbPromptMessage.AppendLine(NexusLinks.ReleasesLegacy);
+
+				try
+				{
+					//the extended message box contains an activex control wich must be run in an STA thread,
+					// we can't control what thread this gets called on, so create one if we need to
+					ThreadStart actShowMessage = () => drResult = ExtendedMessageBox.Show(null, stbPromptMessage.ToString(), "New version available", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
+					ApartmentState astState = ApartmentState.Unknown;
+					Thread.CurrentThread.TrySetApartmentState(astState);
+					if (astState == ApartmentState.STA)
+						actShowMessage();
+					else
+					{
+						Thread thdMessage = new Thread(actShowMessage);
+						thdMessage.SetApartmentState(ApartmentState.STA);
+						thdMessage.Start();
+						thdMessage.Join();
+					}
+
+				}
+				catch
+				{
+				}
+
+				if (drResult == DialogResult.Cancel)
 				{
 					Trace.Unindent();
 					return CancelUpdate();
 				}
 
-				if (verNew == new Version("69.69.69.69"))
+				SetMessage(String.Format("Downloading new {0} version...", EnvironmentInfo.Settings.ModManagerName));
+				
+				string strNewInstaller = string.Empty;
+				try
 				{
-					SetMessage("Could not get version information from the update server.");
-					return false;
+					strNewInstaller = DownloadFile(new Uri(String.Format(strDownloadUri)));
 				}
-
-				StringBuilder stbPromptMessage = new StringBuilder();
-				DialogResult drResult = DialogResult.No;
-
-				if (verNew > new Version(ProgrammeMetadata.VersionString))
+				catch (FileNotFoundException)
 				{
-					stbPromptMessage.AppendFormat("A new legacy version of {0} is available ({1}).{2}Would you like to download and install it?", EnvironmentInfo.Settings.ModManagerName, verNew, Environment.NewLine).AppendLine();
-					stbPromptMessage.AppendLine();
-					stbPromptMessage.AppendLine();
-					stbPromptMessage.AppendLine("NOTE: You can find the change log for the new release here:");
-					stbPromptMessage.AppendLine(NexusLinks.Releases);
-
+					StringBuilder stbAVMessage = new StringBuilder();
+					stbAVMessage.AppendLine("Unable to find the installer to download:");
+					stbAVMessage.AppendLine("this could be caused by a network issue or by your Firewall.");
+					stbAVMessage.AppendLine("As a result you won't be able to automatically update the program.");
+					stbAVMessage.AppendLine();
+					stbAVMessage.AppendFormat("You can download the update manually from:");
+					stbAVMessage.AppendLine(NexusLinks.ReleasesLegacy);
 					try
 					{
 						//the extended message box contains an activex control wich must be run in an STA thread,
 						// we can't control what thread this gets called on, so create one if we need to
-						ThreadStart actShowMessage = () => drResult = ExtendedMessageBox.Show(null, stbPromptMessage.ToString(), "New version available", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
+						ThreadStart actShowMessage = () => drResult = ExtendedMessageBox.Show(null, stbAVMessage.ToString(), "Unable to update", MessageBoxButtons.OK, MessageBoxIcon.Information);
 						ApartmentState astState = ApartmentState.Unknown;
 						Thread.CurrentThread.TrySetApartmentState(astState);
 						if (astState == ApartmentState.STA)
@@ -181,64 +186,11 @@ namespace Nexus.Client.Updating
 					{
 					}
 
-					if (drResult == DialogResult.Cancel)
-					{
-						Trace.Unindent();
-						return CancelUpdate();
-					}
-				}
-				else
-				{
-					if (!m_booIsAutoCheck)
-					{
-						stbPromptMessage.AppendFormat("{0} is already up to date.", EnvironmentInfo.Settings.ModManagerName).AppendLine();
-						stbPromptMessage.AppendLine();
-						stbPromptMessage.AppendLine();
-						stbPromptMessage.AppendLine("NOTE: You can find the release notes, planned features and past versions here:");
-						stbPromptMessage.AppendLine(NexusLinks.Releases);
-
-						try
-						{
-							//the extended message box contains an activex control wich must be run in an STA thread,
-							// we can't control what thread this gets called on, so create one if we need to
-							ThreadStart actShowMessage = () => drResult = ExtendedMessageBox.Show(null, stbPromptMessage.ToString(), "Up to date", MessageBoxButtons.OK, MessageBoxIcon.Information);
-							ApartmentState astState = ApartmentState.Unknown;
-							Thread.CurrentThread.TrySetApartmentState(astState);
-							if (astState == ApartmentState.STA)
-								actShowMessage();
-							else
-							{
-								Thread thdMessage = new Thread(actShowMessage);
-								thdMessage.SetApartmentState(ApartmentState.STA);
-								thdMessage.Start();
-								thdMessage.Join();
-							}
-						}
-						catch
-						{
-						}
-					}
-
-					strDownloadUri = String.Empty;
-				}
-			}
-
-			if (!String.IsNullOrEmpty(strDownloadUri) && (!((verNew == new Version("0.0.0")) || (verNew == new Version("69.69.69.69")))))
-			{
-				string strNewInstaller = String.Empty;
-
-				SetMessage(String.Format("Downloading new {0} version...", EnvironmentInfo.Settings.ModManagerName));
-				try
-				{
-					strNewInstaller = DownloadFile(new Uri(strDownloadUri));
-				}
-				catch (FileNotFoundException)
-				{
-					SetMessage("The update file is not present on the server.");
-					return false;
+					Trace.Unindent();
+					return CancelUpdate();
 				}
 
-				SetProgress(4);
+				SetProgress(2);
 
 				if (CancelRequested)
 				{
@@ -258,7 +210,6 @@ namespace Nexus.Client.Updating
 					}
 					catch (FileNotFoundException)
 					{
-						DialogResult drError = DialogResult.No;
 						StringBuilder stbAVMessage = new StringBuilder();
 						stbAVMessage.AppendLine("Unable to find the downloaded update:");
 						stbAVMessage.AppendLine("this could be caused by a network issue or by your anti-virus software deleting it falsely flagging the installer as a virus.");
@@ -266,13 +217,13 @@ namespace Nexus.Client.Updating
 						stbAVMessage.AppendLine();
 						stbAVMessage.AppendFormat("To fix this issue you need to add {0}'s executable and all its folders to your", EnvironmentInfo.Settings.ModManagerName).AppendLine();
 						stbAVMessage.AppendLine("anti-virus exception list. You can also download the update manually from:");
-						stbAVMessage.AppendLine(NexusLinks.Releases);
+						stbAVMessage.AppendLine(NexusLinks.ReleasesLegacy);
 
 						try
 						{
 							//the extended message box contains an activex control wich must be run in an STA thread,
 							// we can't control what thread this gets called on, so create one if we need to
-							ThreadStart actShowMessage = () => drError = ExtendedMessageBox.Show(null, stbAVMessage.ToString(), "Unable to update", MessageBoxButtons.OK, MessageBoxIcon.Information);
+							ThreadStart actShowMessage = () => drResult = ExtendedMessageBox.Show(null, stbAVMessage.ToString(), "Unable to update", MessageBoxButtons.OK, MessageBoxIcon.Information);
 							ApartmentState astState = ApartmentState.Unknown;
 							Thread.CurrentThread.TrySetApartmentState(astState);
 							if (astState == ApartmentState.STA)
@@ -301,6 +252,37 @@ namespace Nexus.Client.Updating
 					return true;
 				}
 			}
+			else if (!m_booIsAutoCheck)
+			{
+				stbPromptMessage.AppendFormat("{0} is already up to date.", EnvironmentInfo.Settings.ModManagerName).AppendLine();
+				stbPromptMessage.AppendLine();
+				stbPromptMessage.AppendLine();
+				stbPromptMessage.AppendLine("NOTE: You can find the release notes, planned features and past versions here:");
+				stbPromptMessage.AppendLine(NexusLinks.ReleasesLegacy);
+
+				try
+				{
+					//the extended message box contains an activex control wich must be run in an STA thread,
+					// we can't control what thread this gets called on, so create one if we need to
+					ThreadStart actShowMessage = () => drResult = ExtendedMessageBox.Show(null, stbPromptMessage.ToString(), "Up to date", MessageBoxButtons.OK, MessageBoxIcon.Information);
+					ApartmentState astState = ApartmentState.Unknown;
+					Thread.CurrentThread.TrySetApartmentState(astState);
+					if (astState == ApartmentState.STA)
+						actShowMessage();
+					else
+					{
+						Thread thdMessage = new Thread(actShowMessage);
+						thdMessage.SetApartmentState(ApartmentState.STA);
+						thdMessage.Start();
+						thdMessage.Join();
+					}
+
+				}
+				catch
+				{
+				}
+			}
+
 			SetMessage(String.Format("{0} is already up to date.", EnvironmentInfo.Settings.ModManagerName));
 			SetProgress(2);
 			Trace.Unindent();
@@ -326,24 +308,45 @@ namespace Nexus.Client.Updating
 		/// Gets the newest available programme version.
 		/// </summary>
 		/// <returns>The newest available programme version,
-		/// or 69.69.69.69 if no information could be retrieved.</returns>
-		private Version GetNewProgrammeVersion(string p_UpdateUri, out string p_strDownloadUri)
+		/// or 69.69.69.69 if now information could be retrieved.</returns>
+		private Version GetNewProgrammeVersion(out string p_strDownloadUri)
 		{
-			WebClient wclNewVersion = new WebClient();
+			ExtendedWebClient wclNewVersion = new ExtendedWebClient(15000);
 			Version verNew = new Version("69.69.69.69");
 			p_strDownloadUri = String.Empty;
+
 			try
 			{
-				string strNewVersion = wclNewVersion.DownloadString(p_UpdateUri);
+				string strNewVersion = wclNewVersion.DownloadString(NexusLinks.LatestVersion);
 				if (!String.IsNullOrEmpty(strNewVersion))
 				{
 					verNew = new Version(strNewVersion.Split('|')[0]);
 					p_strDownloadUri = strNewVersion.Split('|')[1];
 				}
 			}
-			catch (WebException e)
+			catch (WebException)
 			{
-				Trace.TraceError(String.Format("Could not connect to update server: {0}", e.Message));
+				try
+				{
+					string strNewVersion = wclNewVersion.DownloadString(NexusLinks.LatestVersion4dot5);
+					if (!String.IsNullOrEmpty(strNewVersion))
+					{
+						verNew = new Version(strNewVersion.Split('|')[0]);
+						p_strDownloadUri = strNewVersion.Split('|')[1];
+					}
+				}
+				catch (WebException e)
+				{
+					Trace.TraceError(String.Format("Could not connect to update server: {0}", e.Message));
+				}
+				catch (ArgumentException e)
+				{
+					Trace.TraceError(String.Format("Unexpected response from the server: {0}", e.Message));
+				}
+			}
+			catch (ArgumentException e)
+			{
+				Trace.TraceError(String.Format("Unexpected response from the server: {0}", e.Message));
 			}
 
 			return verNew;

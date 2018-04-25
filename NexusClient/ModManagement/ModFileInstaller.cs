@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using ChinhDo.Transactions;
+using System.Linq;
 using Nexus.Client.Games;
 using Nexus.Client.ModManagement.InstallationLog;
 using Nexus.Client.ModManagement.Scripting;
@@ -24,6 +25,7 @@ namespace Nexus.Client.ModManagement
 		private bool m_booDontOverwriteAll = false;
 		private bool m_booOverwriteAll = false;
 		private ConfirmItemOverwriteDelegate m_dlgOverwriteConfirmationDelegate = null;
+        private ModManager m_mmModManager = null;
 
 		#region Properties
 
@@ -96,7 +98,7 @@ namespace Nexus.Client.ModManagement
 		/// <param name="p_tfmFileManager">The transactional file manager to use to interact with the file system.</param>
 		/// <param name="p_dlgOverwriteConfirmationDelegate">The method to call in order to confirm an overwrite.</param>
 		/// <param name="p_UsesPlugins">Whether the file is a mod or a plugin.</param>
-		public ModFileInstaller(IGameModeEnvironmentInfo p_gmiGameModeInfo, IMod p_modMod, IInstallLog p_ilgInstallLog, IPluginManager p_pmgPluginManager, IDataFileUtil p_dfuDataFileUtility, TxFileManager p_tfmFileManager, ConfirmItemOverwriteDelegate p_dlgOverwriteConfirmationDelegate, bool p_UsesPlugins)
+        public ModFileInstaller(IGameModeEnvironmentInfo p_gmiGameModeInfo, IMod p_modMod, IInstallLog p_ilgInstallLog, IPluginManager p_pmgPluginManager, IDataFileUtil p_dfuDataFileUtility, TxFileManager p_tfmFileManager, ConfirmItemOverwriteDelegate p_dlgOverwriteConfirmationDelegate, bool p_UsesPlugins, ModManager p_mmModManager)
 		{
 			GameModeInfo = p_gmiGameModeInfo;
 			Mod = p_modMod;
@@ -106,6 +108,7 @@ namespace Nexus.Client.ModManagement
 			TransactionalFileManager = p_tfmFileManager;
 			m_dlgOverwriteConfirmationDelegate = p_dlgOverwriteConfirmationDelegate ?? ((s, b, m) => OverwriteResult.No);
 			IsPlugin = p_UsesPlugins;
+            m_mmModManager = p_mmModManager;
 		}
 
 		#endregion
@@ -133,6 +136,22 @@ namespace Nexus.Client.ModManagement
 				if (booFIDataPath)
 					m_booOverwriteAll = false;
 			}
+
+            if(m_mmModManager.IsBackupActive)
+			{
+				ModBackupInfo mbInfo = m_mmModManager.lstMBInfo.Where(x => x.Mod == Mod).FirstOrDefault();
+				if (mbInfo == null)
+					return false;
+				else
+				{
+					KeyValuePair<string, bool> Dictionary = mbInfo.ModFileDictionary.Where(x => x.Key == p_strPath).FirstOrDefault();
+					if (Dictionary.Key == null)
+						return false;
+					else
+						return Dictionary.Value;
+				}
+			}
+
 			string strLoweredPath = strDataPath.ToLowerInvariant();
 			if (m_lstOverwriteFolders.Contains(Path.GetDirectoryName(strLoweredPath)))
 				return true;
@@ -171,7 +190,7 @@ namespace Nexus.Client.ModManagement
 				strMessage = String.Format("Data file '{{0}}' has already been installed by '{0}'", modOld.ModName);
 				if (booFIDataPath)
 					strMessage += " and is ReadOnly.";
-				strMessage += Environment.NewLine + "Overwrite with this mod's file?";
+				strMessage += Environment.NewLine + String.Format("Overwrite with {0} mod's file?", Mod.ModName);
 			}
 			else
 			{
@@ -180,7 +199,7 @@ namespace Nexus.Client.ModManagement
 					strMessage += " and is ReadOnly.";
 				else
 					strMessage += ".";
-				strMessage += Environment.NewLine + "Overwrite with this mod's file?";
+				strMessage += Environment.NewLine + String.Format("Overwrite with {0} mod's file?", Mod.ModName);
 			}
 			if (booFIDataPath)
 			{
@@ -290,8 +309,15 @@ namespace Nexus.Client.ModManagement
 		/// not to overwrite an existing file.</returns>
 		public bool InstallFileFromMod(string p_strModFilePath, string p_strInstallPath, bool p_booSecondaryInstallPath)
 		{
-			byte[] bteModFile = Mod.GetFile(p_strModFilePath);
-			return GenerateDataFile(p_strInstallPath, bteModFile, p_booSecondaryInstallPath);
+			try
+			{
+				byte[] bteModFile = Mod.GetFile(p_strModFilePath);
+				return GenerateDataFile(p_strInstallPath, bteModFile, p_booSecondaryInstallPath);
+			}
+			catch(FileNotFoundException)
+			{
+				return false;
+			}
 		}
 
 		/// <summary>
@@ -417,7 +443,7 @@ namespace Nexus.Client.ModManagement
 					// when we installed the file
 					// if we didn't overwrite a file, then just delete the current file
 					fiInfo = new FileInfo(strInstallFilePath);
-					if (fiInfo.IsReadOnly)
+					if ((fiInfo.IsReadOnly) || (IsFileLocked(strInstallFilePath)))
 						m_lstErrorMods.Add(strInstallFilePath);
 					else
 						TransactionalFileManager.Delete(strInstallFilePath);
@@ -443,9 +469,13 @@ namespace Nexus.Client.ModManagement
 						string strNewDataPath = Path.Combine(Path.GetDirectoryName(strInstallFilePath), strBackupFileName);
 
 						fiInfo = new FileInfo(strRestoreFromPath);
-						TransactionalFileManager.Copy(strRestoreFromPath, strNewDataPath, true);
+						try
+						{
+							TransactionalFileManager.Copy(strRestoreFromPath, strNewDataPath, true);
+						}
+						catch{}
 
-						if (fiInfo.IsReadOnly)
+						if ((fiInfo.IsReadOnly) || (IsFileLocked(strRestoreFromPath)))
 							m_lstErrorMods.Add(strInstallFilePath);
 						else
 							TransactionalFileManager.Delete(strRestoreFromPath);
@@ -461,7 +491,7 @@ namespace Nexus.Client.ModManagement
 			if (File.Exists(strOverwritePath))
 			{
 				fiInfo = new FileInfo(strOverwritePath);
-				if (((fiInfo.Attributes | FileAttributes.Hidden) == fiInfo.Attributes) || (fiInfo.IsReadOnly))
+				if (((fiInfo.Attributes | FileAttributes.Hidden) == fiInfo.Attributes) || (fiInfo.IsReadOnly) || IsFileLocked(strOverwritePath))
 					m_lstErrorMods.Add(strInstallFilePath);
 				else
 					TransactionalFileManager.Delete(strOverwritePath);
@@ -473,6 +503,22 @@ namespace Nexus.Client.ModManagement
 			TrimEmptyDirectories(strOverwritePath.Replace(strFileName, ""), strStopDirectory);
 
 			InstallLog.RemoveDataFile(Mod, p_strPath);
+		}
+
+		/// <summary>
+		/// Check if the file is in use.
+		/// </summary>
+		public bool IsFileLocked(string filePath)
+		{
+			try
+			{
+				using (File.Open(filePath, FileMode.Open)) { }
+				return false;
+			}
+			catch (IOException e)
+			{
+				return true;
+			}
 		}
 
 		/// <summary>

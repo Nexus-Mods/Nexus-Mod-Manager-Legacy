@@ -47,6 +47,8 @@ namespace Nexus.Client.ModManagement
 		protected IGameMode GameMode { get; private set; }
 
 		protected ReadOnlyObservableList<IMod> ActiveMods { get; set; }
+		private bool boo_CheckUninstallError = false;
+		public string strPopupErrorMessageType = string.Empty;
 
 		#endregion
 
@@ -93,6 +95,7 @@ namespace Nexus.Client.ModManagement
 		protected bool UninstallFiles()
 		{
 			bool booSecondaryInstall = false;
+            string strCheckedFile = string.Empty;
 			OverallMessage = "Uninstalling Mod...";
 			ShowItemProgress = true;
 			OverallProgressStepSize = 1;
@@ -119,9 +122,19 @@ namespace Nexus.Client.ModManagement
 					if (GameMode.CheckSecondaryUninstall(strFile))
 						return false;
 				}
+
+                if (Path.IsPathRooted(strFile))
+				{
+					string strCompatibilityPath = Path.Combine(Path.Combine(GameMode.GameModeEnvironmentInfo.ModDirectory, "VirtualInstall"), Path.GetFileNameWithoutExtension(Mod.Filename));
+					strCheckedFile = strFile.Replace(strCompatibilityPath, "");
+					strCheckedFile = strCheckedFile.TrimStart(Path.DirectorySeparatorChar);
+				}
+				else
+					strCheckedFile = strFile;
+
 				try
 				{
-					Installers.FileInstaller.UninstallDataFile(strFile, booSecondaryInstall);
+                    Installers.FileInstaller.UninstallDataFile(strCheckedFile, booSecondaryInstall);
 				}
 				catch (UnauthorizedAccessException)
 				{
@@ -129,18 +142,43 @@ namespace Nexus.Client.ModManagement
 										"This error commonly occurs when Antivirus programs (even if disabled) prevents NMM from interacting with game/mod files." + Environment.NewLine +
 										"Please add NMM and its folders to the antivirus' exception list.";
 					Installers.FileInstaller.InstallErrors.Add(strDetails);
+					strPopupErrorMessageType = "Error";
 					return false;
 				}
-				catch (NullReferenceException ex)
+				catch (Nexus.Client.ModManagement.Scripting.IllegalFilePathException)
+				{
+					string strDetails = Environment.NewLine +
+										"The mod has been deleted with success, but the manager was unable to remove one or more files. " + Environment.NewLine +
+										"An IllegalFilePathException was thrown, a path is safe to be written to if it contains no charaters disallowed by the operating system and if it is in the Data directory or one of its sub-directories." + Environment.NewLine;
+					if (!boo_CheckUninstallError)
+					{
+						Installers.FileInstaller.InstallErrors.Add(strDetails);
+						boo_CheckUninstallError = true;
+					}
+					strPopupErrorMessageType = "Warning";
+				}
+               	catch (NullReferenceException ex)
 				{
 					string strDetails = ex.Message;
 					Installers.FileInstaller.InstallErrors.Add(strDetails);
+					strPopupErrorMessageType = "Error";
 					return false;
 				}
 				StepItemProgress();
 			}
 			StepOverallProgress();
 
+			if (Installers.FileInstaller.InstallErrors.Count > 0)
+			{
+				if (!boo_CheckUninstallError)
+				{
+					string strDetails = Environment.NewLine + "The mod has been deleted with success, but the manager was unable to remove one or more files. " + Environment.NewLine;
+					Installers.FileInstaller.InstallErrors.Add(strDetails);
+					boo_CheckUninstallError = true;
+				}
+				strPopupErrorMessageType = "Warning";
+			}
+						
 			ItemProgressMaximum = lstIniEdits.Count;
 			ItemProgress = 0;
 			ItemMessage = "Undoing Ini Edits...";
@@ -148,7 +186,8 @@ namespace Nexus.Client.ModManagement
 			{
 				if (Status == TaskStatus.Cancelling)
 					return false;
-				Installers.IniInstaller.UneditIni(iniEdit.File, iniEdit.Section, iniEdit.Key);
+				if (File.Exists(iniEdit.File))
+					Installers.IniInstaller.UneditIni(iniEdit.File, iniEdit.Section, iniEdit.Key);
 				StepItemProgress();
 			}
 			StepOverallProgress();

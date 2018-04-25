@@ -28,7 +28,7 @@ namespace Nexus.Client
 		private System.Windows.Forms.Timer m_tmrGlow = new System.Windows.Forms.Timer();
 		Int32 m_intGlowPosition = 0;
 		Int32 m_intProgressWidth = 0;
-
+		
 		#region Properties
 
 		/// <summary>
@@ -61,12 +61,7 @@ namespace Nexus.Client
 				m_vmlViewModel.TaskEnded += new EventHandler<TaskEndedEventArgs>(Task_TaskEnded);
 				m_vmlViewModel.PropertyChanged += new PropertyChangedEventHandler(Task_PropertyChanged);
 
-				var pos = this.PointToScreen(lblVersion.Location);
-				pos = pbxLogo.PointToClient(pos);
-				lblVersion.Parent = pbxLogo;
-				lblVersion.Location = pos;
-				lblVersion.BackColor = Color.Transparent;
-				lblVersion.Text = "LEGACY - " + m_vmlViewModel.EnvironmentInfo.ApplicationVersion.ToString();
+				lblVersion.Text = m_vmlViewModel.EnvironmentInfo.ApplicationVersion.ToString();
 				Text = m_vmlViewModel.EnvironmentInfo.Settings.ModManagerName;
 			}
 		}
@@ -190,7 +185,7 @@ namespace Nexus.Client
 				grpGraphics.CompositingMode = CompositingMode.SourceCopy;
 				grpGraphics.DrawImage(ColourImage, rctCopyArea, rctCopyArea, GraphicsUnit.Pixel);
 			}
-
+		
 			Int32 intHalfWidth = 20;
 			float fltLuminence = 80;
 			byte bteR = 0;

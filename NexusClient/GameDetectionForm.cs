@@ -118,6 +118,24 @@ namespace Nexus.Client
 		}
 
 		/// <summary>
+		/// Handles the <see cref="Control.Click"/> event of the cancel button.
+		/// </summary>
+		/// <remarks>
+		/// Confirms that the users wants to cancel the detection.
+		/// </remarks>
+		/// <param name="sender">The object that raised the event.</param>
+		/// <param name="e">An <see cref="EventArgs"/> describing the event arguments.</param>
+		private void butCancel_Click(object sender, EventArgs e)
+		{
+			DialogResult = DialogResult.None;
+			if (MessageBox.Show(this, String.Format("Cancelling will exit {0}. Are you sure?", ViewModel.EnvironmentInfo.Settings.ModManagerName), "Confirm", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK)
+			{
+				DialogResult = DialogResult.Cancel;
+				ViewModel.Cancel();
+			}
+		}
+
+		/// <summary>
 		/// Handles the <see cref="Control.Click"/> event of the stop searching button.
 		/// </summary>
 		/// <remarks>
@@ -149,24 +167,6 @@ namespace Nexus.Client
 			{
 				GameModeSearchListViewItem gsvGameModeSearchItem = (GameModeSearchListViewItem)glvGameModeListView;
 				gsvGameModeSearchItem.StopSearching();
-			}
-		}
-
-		/// <summary>
-		/// Handles the <see cref="Control.Click"/> event of the cancel button.
-		/// </summary>
-		/// <remarks>
-		/// Confirms that the users wants to cancel the detection.
-		/// </remarks>
-		/// <param name="sender">The object that raised the event.</param>
-		/// <param name="e">An <see cref="EventArgs"/> describing the event arguments.</param>
-		private void butCancel_Click(object sender, EventArgs e)
-		{
-			DialogResult = DialogResult.None;
-			if (MessageBox.Show(this, String.Format("Cancelling will exit {0}. Are you sure?", ViewModel.EnvironmentInfo.Settings.ModManagerName), "Confirm", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK)
-			{
-				DialogResult = DialogResult.Cancel;
-				ViewModel.Cancel();
 			}
 		}
 

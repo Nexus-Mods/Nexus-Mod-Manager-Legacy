@@ -154,7 +154,6 @@
 			this.tbxToolDirectory.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
 			this.tbxToolDirectory.Location = new System.Drawing.Point(102, 106);
-			
 			this.tbxToolDirectory.Name = "tbxToolDirectory";
 			this.tbxToolDirectory.Size = new System.Drawing.Size(286, 20);
 			this.tbxToolDirectory.TabIndex = 15;

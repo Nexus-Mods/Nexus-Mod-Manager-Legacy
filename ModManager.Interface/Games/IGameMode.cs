@@ -84,6 +84,18 @@ namespace Nexus.Client.Games
 		bool UsesPlugins { get; }
 
 		/// <summary>
+		/// Gets whether the game mode supports the automatic sorting
+		/// functionality for plugins.
+		/// </summary>
+		bool SupportsPluginAutoSorting { get; }
+
+		/// <summary>
+		/// Gets the plugin loadorder manager.
+		/// </summary>
+		/// <value>The plugin loadorder manager.</value>
+		ILoadOrderManager LoadOrderManager { get; }
+
+		/// <summary>
 		/// Gets the default game categories.
 		/// </summary>
 		/// <value>The default game categories stored in the resource file.</value>
@@ -109,6 +121,11 @@ namespace Nexus.Client.Games
 		/// Whether the game has a secondary install path.
 		/// </summary>
 		bool HasSecondaryInstallPath { get; }
+
+		/// <summary>
+		/// Whether the plugin sorter is properly initialized.
+		/// </summary>
+		bool PluginSorterInitialized { get; }
 
 		#endregion
 
@@ -159,6 +176,13 @@ namespace Nexus.Client.Games
 		/// <returns><c>true</c> if the specified pluing is critical;
 		/// <c>false</c> otherwise.</returns>
 		bool IsCriticalPlugin(Plugin p_plgPlugin);
+
+		/// <summary>
+		/// Automatically sorts the given plugin list.
+		/// </summary>
+		/// <returns>The sorted list.</returns>
+		/// <param name="p_lstPlugins">The plugin list to sort.</param>
+		string[] SortPlugins(IList<Plugin> p_lstPlugins);
 
 		#endregion
 

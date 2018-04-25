@@ -1,5 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Nexus.Client.BackgroundTasks;
 using Nexus.Client.Games;
 using Nexus.Client.Mods;
@@ -123,14 +125,19 @@ namespace Nexus.Client.ModManagement
 						if (!(SkipReadme && Readme.IsValidExtension(Path.GetExtension(strFile).ToLower()) && (Path.GetDirectoryName(strFixedPath) == Path.GetFileName(GameMode.PluginDirectory))))
 						{
 							if (FileInstaller.InstallFileFromMod(strFile, strFixedPath, booSecondaryInstall))
-								if ((GameMode.UsesPlugins) && (PluginManager.IsActivatiblePluginFile(strFixedPath)))
-									PluginManager.ActivatePlugin(strFixedPath);
+								ActivatePlugin(strFixedPath);
 						}
 					}
 				}
 				StepOverallProgress();
 			}
 			return true;
+		}
+
+		protected void ActivatePlugin(string p_strPlugin)
+		{
+			if ((GameMode.UsesPlugins) && (PluginManager.IsActivatiblePluginFile(p_strPlugin)))
+				PluginManager.ActivatePlugin(p_strPlugin); 
 		}
 	}
 }

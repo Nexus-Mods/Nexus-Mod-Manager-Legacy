@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
@@ -10,7 +10,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Nexus.Client</RootNamespace>
     <AssemblyName>NexusClient</AssemblyName>
-    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <ApplicationIcon>Resources\tes_logo.ico</ApplicationIcon>
     <TargetZone>Internet</TargetZone>
@@ -21,6 +21,7 @@
     <UpgradeBackupLocation>
     </UpgradeBackupLocation>
     <OldToolsVersion>3.5</OldToolsVersion>
+    <TargetFrameworkProfile />
     <PublishUrl>publish\</PublishUrl>
     <Install>true</Install>
     <InstallFrom>Disk</InstallFrom>
@@ -45,6 +46,7 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <DocumentationFile>bin\Debug\NexusClient.XML</DocumentationFile>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -53,8 +55,16 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="ActivateModsMonitoring\ActivateModsMonitor.cs" />
+    <Compile Include="ActivateModsMonitoring\UI\ActivateModsListViewItem.cs" />
+    <Compile Include="ActivateModsMonitoring\UI\ActivateModsMonitorControl.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ActivateModsMonitoring\UI\ActivateModsMonitorControl.Designer.cs" />
+    <Compile Include="ActivateModsMonitoring\UI\ActivateModsMonitorVM.cs" />
     <Compile Include="EnvironmentInfo.cs" />
     <Compile Include="GameModeSelectionForm.cs">
       <SubType>Form</SubType>
@@ -64,6 +74,7 @@
     </Compile>
     <Compile Include="GameModeSelector.cs" />
     <Compile Include="HeaderlessTextWriterTraceListener.cs" />
+    <Compile Include="LoginFormTask.cs" />
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -110,6 +121,7 @@
     <Compile Include="ModAuthoring\UI\ModPackagingFormVM.cs" />
     <Compile Include="ModManagement\InstallationLog\InstallLog.DummyMod.cs" />
     <Compile Include="ModManagement\InstallationLog\InstallLog.TransactionEnlistment.cs" />
+    <Compile Include="ModManagement\ModBackupInfo.cs" />
     <Compile Include="ModManagement\ModFileInstaller.cs" />
     <Compile Include="ModManagement\InstallationLog\InstallLog.cs" />
     <Compile Include="ModManagement\ModInstaller.cs" />
@@ -132,8 +144,11 @@
     <Compile Include="ModRepositories\Nexus\NexusLinks.cs" />
     <Compile Include="Mods\NexusMod.cs" />
     <Compile Include="Mods\NexusModCacheManager.cs" />
+    <Compile Include="PluginManagement\AutoPluginSortingTask.cs" />
+    <Compile Include="PluginManagement\ManageMultiplePluginsTask.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <EmbeddedResource Include="ActivateModsMonitoring\UI\ActivateModsMonitorControl.resx" />
     <EmbeddedResource Include="ActivityMonitoring\UI\ActivityMonitorControl.resx">
       <DependentUpon>ActivityMonitorControl.cs</DependentUpon>
       <SubType>Designer</SubType>
@@ -154,6 +169,9 @@
       <DependentUpon>DownloadSettingsPage.cs</DependentUpon>
       <SubType>Designer</SubType>
     </EmbeddedResource>
+    <EmbeddedResource Include="TipsManagement\Balloon.resx" />
+    <EmbeddedResource Include="TipsManagement\BalloonVM.resx" />
+    <EmbeddedResource Include="TipsManagement\Hooks\WindowsHook.resx" />
     <EmbeddedResource Include="UI\Controls\GameModeListViewItem.resx">
       <DependentUpon>GameModeListViewItem.cs</DependentUpon>
       <SubType>Designer</SubType>
@@ -238,15 +256,34 @@
       <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
     <Compile Include="Settings.cs" />
+    <Compile Include="TipsManagement\Balloon.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TipsManagement\BalloonManager.cs" />
+    <Compile Include="TipsManagement\BalloonVM.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TipsManagement\HitTestCodes.cs" />
+    <Compile Include="TipsManagement\Hooks\BaseHook.cs" />
+    <Compile Include="TipsManagement\Hooks\CallWndProcHook.cs" />
+    <Compile Include="TipsManagement\Hooks\CallWndProcRetHook.cs" />
+    <Compile Include="TipsManagement\Hooks\KeyBoardHook.cs" />
+    <Compile Include="TipsManagement\Hooks\MouseHook.cs" />
+    <Compile Include="TipsManagement\Hooks\WindowsHook.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="TipsManagement\Tips.cs" />
     <Compile Include="Util\NexusFileUtil.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="data\7z-32bit.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\7z-64bit.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <None Include="Resources\thumb_up.png" />
+    <None Include="Resources\thumb_no.png" />
+    <EmbeddedResource Include="Resources\Tips.xml">
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <None Include="Resources\tipsClose.png" />
+    <None Include="Resources\tips.png" />
+    <None Include="Resources\uac-icon.png" />
     <None Include="data\releasenotes.rtf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -296,10 +333,18 @@
     <None Include="Resources\europeanunion.png" />
     <None Include="Resources\offline-icon.png" />
     <None Include="Resources\online-icon.png" />
+    <Content Include="data\7z-32bit.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\7z-64bit.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <None Include="Resources\arrow_state_blue_left.png" />
+    <None Include="Resources\arrow_state_blue_right.png" />
+    <None Include="Resources\help_book.png" />
+    <None Include="Resources\round_loading.GIF" />
+    <None Include="Resources\edit_delete_16.png" />
     <Content Include="Resources\tes_logo.ico" />
-    <None Include="Resources\thumb_up.png" />
-    <None Include="Resources\thumb_no.png" />
-    <None Include="Resources\uac-icon.png" />
     <None Include="Resources\update_warning_disabled.png" />
     <None Include="Resources\update_warning.png" />
     <None Include="Resources\text-x-generic.png" />
@@ -339,7 +384,6 @@
     </Compile>
     <Compile Include="DownloadMonitoring\UI\DownloadMonitorVM.cs" />
     <Compile Include="IMessager.cs" />
-    <Compile Include="LoginFormTask.cs" />
     <Compile Include="MessagerClient.cs" />
     <Compile Include="ModManagement\CategoryManager\CategoryManager.cs" />
     <Compile Include="ModManagement\CategorySwitchTask.cs" />
@@ -506,7 +550,9 @@
     <None Include="Resources\deactivate_mod.png" />
     <None Include="Resources\activate_mod.png" />
     <None Include="Resources\add_mod.png" />
-    <None Include="app.config" />
+    <None Include="app.config">
+      <SubType>Designer</SubType>
+    </None>
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
@@ -522,11 +568,12 @@
     <None Include="Resources\077_AddFile_48x48_72.png" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="Accessibility" />
     <Reference Include="ICSharpCode.TextEditor, Version=3.2.1.6466, Culture=neutral, PublicKeyToken=4d61825e8dd49f1a, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\lib\ICSharpCode.TextEditor.dll</HintPath>
     </Reference>
-    <Reference Include="ObjectListView, Version=2.5.1.25760, Culture=neutral, PublicKeyToken=b1c5bf581481bcd4, processorArchitecture=MSIL">
+    <Reference Include="ObjectListView, Version=2.8.0.20711, Culture=neutral, PublicKeyToken=b1c5bf581481bcd4, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\lib\ObjectListView.dll</HintPath>
     </Reference>
@@ -540,6 +587,7 @@
     </Reference>
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Runtime.Remoting" />
     <Reference Include="System.Runtime.Serialization">
       <RequiredTargetFramework>3.0</RequiredTargetFramework>
@@ -602,6 +650,11 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1 Client Profile</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
     <BootstrapperPackage Include="Microsoft.Net.Framework.2.0">
       <Visible>False</Visible>
       <ProductName>.NET Framework 2.0 %28x86%29</ProductName>

@@ -23,6 +23,7 @@ namespace Nexus.Client.ModManagement
 	public class ModInstaller : ModInstallerBase
 	{
 		private ConfirmItemOverwriteDelegate m_dlgOverwriteConfirmationDelegate = null;
+		private ModManager m_mmModManager = null;
 
 		#region Properties
 
@@ -31,6 +32,36 @@ namespace Nexus.Client.ModManagement
 		/// </summary>
 		/// <value>The mod being installed.</value>
 		protected IMod Mod { get; set; }
+
+        /// <summary>
+		/// Gets or sets the mod name.
+		/// </summary>
+		/// <value>The mod name.</value>
+		public string ModName 
+		{ 
+			get
+			{
+				if(Mod != null)
+					return Mod.ModName;
+				else
+					return null;
+			}
+		}
+
+        /// <summary>
+        /// Gets or sets the mod file name.
+        /// </summary>
+        /// <value>The mod file name.</value>
+        public string ModFileName
+        {
+            get
+            {
+                if (Mod != null)
+                    return Mod.Filename;
+                else
+                    return null;
+            }
+        }
 
 		/// <summary>
 		/// Gets or sets the application's envrionment info.
@@ -89,7 +120,7 @@ namespace Nexus.Client.ModManagement
 		/// <param name="p_pmgPluginManager">The plugin manager.</param>
 		/// <param name="p_dlgOverwriteConfirmationDelegate">The method to call in order to confirm an overwrite.</param>
 		/// <param name="p_rolActiveMods">The list of active mods.</param>
-		public ModInstaller(IMod p_modMod, IGameMode p_gmdGameMode, IEnvironmentInfo p_eifEnvironmentInfo, FileUtil p_futFileUtility, SynchronizationContext p_scxUIContext, IInstallLog p_ilgModInstallLog, IPluginManager p_pmgPluginManager, ConfirmItemOverwriteDelegate p_dlgOverwriteConfirmationDelegate, ReadOnlyObservableList<IMod> p_rolActiveMods)
+        public ModInstaller(IMod p_modMod, IGameMode p_gmdGameMode, IEnvironmentInfo p_eifEnvironmentInfo, FileUtil p_futFileUtility, SynchronizationContext p_scxUIContext, IInstallLog p_ilgModInstallLog, IPluginManager p_pmgPluginManager, ConfirmItemOverwriteDelegate p_dlgOverwriteConfirmationDelegate, ReadOnlyObservableList<IMod> p_rolActiveMods, ModManager p_mmModManager)
 		{
 			Mod = p_modMod;
 			GameMode = p_gmdGameMode;
@@ -100,6 +131,7 @@ namespace Nexus.Client.ModManagement
 			PluginManager = p_pmgPluginManager;
 			m_dlgOverwriteConfirmationDelegate = p_dlgOverwriteConfirmationDelegate;
 			ActiveMods = p_rolActiveMods;
+            m_mmModManager = p_mmModManager;
 		}
 
 		#endregion
@@ -130,14 +162,16 @@ namespace Nexus.Client.ModManagement
 			// hence the lock.
 			bool booSuccess = false;
 			string strMessage = "The mod was not activated.";
-			bool booGotLock = false;
+
 			try
 			{
-				booGotLock = Monitor.TryEnter(objInstallLock);
-				if (booGotLock)
+				lock (objUninstallLock)
 				{
 					using (TransactionScope tsTransaction = new TransactionScope())
 					{
+						if (!File.Exists(Mod.Filename))
+							throw new Exception("The selected file was not found: " + Mod.Filename);
+						
 						TxFileManager tfmFileManager = new TxFileManager();
 
 						if (!BeginModReadOnlyTransaction())
@@ -152,10 +186,6 @@ namespace Nexus.Client.ModManagement
 							GC.GetTotalMemory(true);
 						}
 					}
-				}
-				else
-				{
-					strMessage = "Only one installation can be performed at a time.";
 				}
 			}
 			catch (TransactionException)
@@ -193,12 +223,12 @@ namespace Nexus.Client.ModManagement
 					}
 				string strExceptionMessageFormat = "A problem occurred during install: " + Environment.NewLine + "{0}" + Environment.NewLine + "The mod was not installed."; ;
 				strMessage = String.Format(strExceptionMessageFormat, stbError.ToString());
+				PopupErrorMessage = strMessage;
+				PopupErrorMessageType = "Error";
 			}
 			finally
 			{
 				Mod.EndReadOnlyTransaction();
-				if (booGotLock)
-					Monitor.Exit(objInstallLock);
 			}
 			OnTaskSetCompleted(booSuccess, strMessage, Mod);
 		}
@@ -227,20 +257,31 @@ namespace Nexus.Client.ModManagement
 		{
 			IModFileInstaller mfiFileInstaller = CreateFileInstaller(p_tfmFileManager, m_dlgOverwriteConfirmationDelegate);
 			bool booResult = false;
+			IIniInstaller iniIniInstaller = null;
+			IGameSpecificValueInstaller gviGameSpecificValueInstaller = null;
 			if (Mod.HasInstallScript)
 			{
-				IDataFileUtil dfuDataFileUtility = new DataFileUtil(GameMode.GameModeEnvironmentInfo.InstallationPath);
+				try
+				{
+					IDataFileUtil dfuDataFileUtility = new DataFileUtil(GameMode.GameModeEnvironmentInfo.InstallationPath);
 
-				IIniInstaller iniIniInstaller = CreateIniInstaller(p_tfmFileManager, m_dlgOverwriteConfirmationDelegate);
-				IGameSpecificValueInstaller gviGameSpecificValueInstaller = CreateGameSpecificValueInstaller(p_tfmFileManager, m_dlgOverwriteConfirmationDelegate);
+					iniIniInstaller = CreateIniInstaller(p_tfmFileManager, m_dlgOverwriteConfirmationDelegate);
+					gviGameSpecificValueInstaller = CreateGameSpecificValueInstaller(p_tfmFileManager, m_dlgOverwriteConfirmationDelegate);
 
-				InstallerGroup ipgInstallers = new InstallerGroup(dfuDataFileUtility, mfiFileInstaller, iniIniInstaller, gviGameSpecificValueInstaller, PluginManager);
-				IScriptExecutor sexScript = Mod.InstallScript.Type.CreateExecutor(Mod, GameMode, EnvironmentInfo, ipgInstallers, UIContext);
-				sexScript.TaskStarted += new EventHandler<EventArgs<IBackgroundTask>>(ScriptExecutor_TaskStarted);
-				sexScript.TaskSetCompleted += new EventHandler<TaskSetCompletedEventArgs>(ScriptExecutor_TaskSetCompleted);
-				booResult = sexScript.Execute(Mod.InstallScript);
+					InstallerGroup ipgInstallers = new InstallerGroup(dfuDataFileUtility, mfiFileInstaller, iniIniInstaller, gviGameSpecificValueInstaller, PluginManager);
+					IScriptExecutor sexScript = Mod.InstallScript.Type.CreateExecutor(Mod, GameMode, EnvironmentInfo, ipgInstallers, UIContext);
+					sexScript.TaskStarted += new EventHandler<EventArgs<IBackgroundTask>>(ScriptExecutor_TaskStarted);
+					sexScript.TaskSetCompleted += new EventHandler<TaskSetCompletedEventArgs>(ScriptExecutor_TaskSetCompleted);
+					booResult = sexScript.Execute(Mod.InstallScript);
+				}
+				catch (Exception ex)
+				{
+					PopupErrorMessage = ex.Message;
+					PopupErrorMessageType = "Error";
+				}
 
 				iniIniInstaller.FinalizeInstall();
+
 				if (gviGameSpecificValueInstaller != null)
 					gviGameSpecificValueInstaller.FinalizeInstall();
 			}
@@ -311,7 +352,7 @@ namespace Nexus.Client.ModManagement
 		/// <returns>The file installer to use to install the mod's files.</returns>
 		protected virtual IModFileInstaller CreateFileInstaller(TxFileManager p_tfmFileManager, ConfirmItemOverwriteDelegate p_dlgOverwriteConfirmationDelegate)
 		{
-			return new ModFileInstaller(GameMode.GameModeEnvironmentInfo, Mod, ModInstallLog, PluginManager, new DataFileUtil(GameMode.GameModeEnvironmentInfo.InstallationPath), p_tfmFileManager, p_dlgOverwriteConfirmationDelegate, GameMode.UsesPlugins);
+            return new ModFileInstaller(GameMode.GameModeEnvironmentInfo, Mod, ModInstallLog, PluginManager, new DataFileUtil(GameMode.GameModeEnvironmentInfo.InstallationPath), p_tfmFileManager, p_dlgOverwriteConfirmationDelegate, GameMode.UsesPlugins, m_mmModManager);
 		}
 
 		/// <summary>

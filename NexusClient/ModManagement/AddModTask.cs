@@ -411,7 +411,7 @@ namespace Nexus.Client.ModManagement
 			{
 				if (m_mrpModRepository.IsOffline)
 				{
-					Pause();
+                    Pause();
 					return;
 				}
 				else
@@ -493,7 +493,7 @@ namespace Nexus.Client.ModManagement
 				if (Descriptor == null)
 					return null;
 				else
-					return Uri.UnescapeDataString(Path.GetFileNameWithoutExtension(Descriptor.DefaultSourcePath));
+					return Path.GetFileNameWithoutExtension(Descriptor.DefaultSourcePath);
 			return ModInfo.ModName;
 		}
 
@@ -563,8 +563,9 @@ namespace Nexus.Client.ModManagement
 				m_eifEnvironmentInfo.Settings.QueuedModsToAdd[m_gmdGameMode.ModeId] = new KeyedSettings<AddModDescriptor>();
 			KeyedSettings<AddModDescriptor> dicQueuedMods = m_eifEnvironmentInfo.Settings.QueuedModsToAdd[m_gmdGameMode.ModeId];
 			AddModDescriptor amdDescriptor = null;
+
 			if ((p_uriPath.Scheme.ToLowerInvariant()) == "file")
- 			{
+			{
 				if (dicQueuedMods.TryGetValue(p_uriPath.ToString(), out amdDescriptor))
 					m_strFileserverCaptions = amdDescriptor.SourceName;
 				else
@@ -645,7 +646,7 @@ namespace Nexus.Client.ModManagement
 				lock (m_eifEnvironmentInfo.Settings)
 					m_eifEnvironmentInfo.Settings.Save();
 			}
-			
+
 			return amdDescriptor;
 		}
 
@@ -849,7 +850,21 @@ namespace Nexus.Client.ModManagement
 			string strPath = String.IsNullOrEmpty(Descriptor.SourcePath) ? Descriptor.DefaultSourcePath : Descriptor.SourcePath;
 			string strDestinationHD = String.Empty;
 			m_booFinishedDownloads = true;
-			FileAttributes faAttributes = File.GetAttributes(strPath);
+
+			FileAttributes faAttributes = new FileAttributes();
+
+			try
+			{
+				faAttributes = File.GetAttributes(strPath);
+			}
+			catch (DirectoryNotFoundException)
+			{
+				OverallMessage = String.Format("Could not find a part of the path: {0}", strPath);
+				ItemMessage = "Path error";
+				Status = TaskStatus.Error;
+				OnTaskEnded(OverallMessage, null);
+			}
+
 			FileInfo fiArchive = new FileInfo(strPath);
 			long lngDestinationFreeSpace = fiArchive.Length;
 
@@ -955,7 +970,7 @@ namespace Nexus.Client.ModManagement
 		/// <param name="p_lstAddedMods">The mods that have been added and need to be registered with the manager.</param>
 		protected void RegisterModFiles(IList<string> p_lstAddedMods)
 		{
-			OverallMessage = "Adding mods to manager...";
+			OverallMessage = "Adding mod to manager...";
 			ItemMessage = "Registering Mods...";
 			if (p_lstAddedMods != null)
 			{
@@ -964,6 +979,8 @@ namespace Nexus.Client.ModManagement
 
 				foreach (string strMod in p_lstAddedMods)
 				{
+					OverallMessage = String.Format("Adding mod: {0}", strMod);
+
 					try
 					{
 						if (m_mrgModRegistry.RegisteredMods.SingleOrDefault(x => x.Filename == strMod) == null)
@@ -984,7 +1001,7 @@ namespace Nexus.Client.ModManagement
 					}
 					catch (Exception ex)
 					{
-						OverallMessage = String.Format("There was an error registering this mod: {1}" + Environment.NewLine + "Error: {0} ", ex.Message, GetModDisplayName());
+						OverallMessage = String.Format("Error registering this mod: {1}" + Environment.NewLine + "Error: {0} ", ex.Message, GetModDisplayName());
 						ItemMessage = "Error registering mod.";
 						Status = TaskStatus.Error;
 						OnTaskEnded(null, null);
@@ -1026,11 +1043,9 @@ namespace Nexus.Client.ModManagement
 
 			if (Descriptor == null)
 			{
-				Status = TaskStatus.Error;
-				Descriptor = BuildDescriptor(m_uriPath);
-				Descriptor.Status = Status;
-				OverallMessage = String.Format("An error occurred while cancelling: {0}", m_uriPath.ToString());
-				OnTaskEnded(String.Format("An error occurred while cancelling: {0}", m_uriPath.ToString()), null);
+                Descriptor = new AddModDescriptor(m_uriPath, String.Empty, null, Status, null);
+                OverallMessage = String.Format("Cancelled: {0}", m_uriPath.ToString());
+                OnTaskEnded(String.Format("Cancelled: {0}", m_uriPath.ToString()), null);
 				return;
 			}
 

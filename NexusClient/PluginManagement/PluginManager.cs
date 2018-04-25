@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using Nexus.Client.BackgroundTasks;
 using Nexus.Client.Games;
 using Nexus.Client.PluginManagement.InstallationLog;
 using Nexus.Client.PluginManagement.OrderLog;
 using Nexus.Client.Plugins;
+using Nexus.Client.UI;
 using Nexus.Client.Util.Collections;
 
 namespace Nexus.Client.PluginManagement
@@ -202,6 +204,18 @@ namespace Nexus.Client.PluginManagement
 		}
 
 		/// <summary>
+		/// Automatically sorts the managed plugins.
+		/// </summary>
+		/// <param name="p_camConfirm">The delegate to call to confirm an action.</param>
+		/// <returns>The background task that will run the sorting.</returns>
+		public IBackgroundTask AutoPluginSorting(ConfirmActionMethod p_camConfirm)
+		{
+			AutoPluginSortingTask pstPluginSortingTask = new AutoPluginSortingTask(GameMode, ManagedPlugins, p_camConfirm);
+			pstPluginSortingTask.Update(p_camConfirm);
+			return pstPluginSortingTask;
+		}
+
+		/// <summary>
 		/// Determines if the specified plugin is registered.
 		/// </summary>
 		/// <param name="p_strPath">The path to the plugin whose registration status is to be determined.</param>
@@ -211,7 +225,7 @@ namespace Nexus.Client.PluginManagement
 		{
 			return GetRegisteredPlugin(p_strPath) != null;
 		}
-
+		
 		/// <summary>
 		/// Gets the specified plugin.
 		/// </summary>
@@ -219,7 +233,7 @@ namespace Nexus.Client.PluginManagement
 		/// <returns>The specified plugin, or <c>null</c> if the plugin is not registered.</returns>
 		public Plugin GetRegisteredPlugin(string p_strPath)
 		{
-			//TODO this check doesn't work for Bamegryo based games
+			//TODO this check doesn't work for Gamebryo based games
 			// GetFormatSpecificInstallPath() (or whatever it is called) should be
 			// used instead of InstallationPath
 			// but we can't use it because asking for the mod format here makes no
@@ -227,7 +241,7 @@ namespace Nexus.Client.PluginManagement
 			// as such, mods should pass in the full path, or at least a path relative to
 			// InstallationPath
 			// Really, I think GetFormatSpecificInstallPath() should be scrapped,
-			// and mods sohuld adjust for the current game mode, not the game mode for the
+			// and mods should adjust for the current game mode, not the game mode for the
 			// current mod format
 			string strPath = p_strPath;
 			if (!Path.IsPathRooted(p_strPath))
@@ -319,6 +333,20 @@ namespace Nexus.Client.PluginManagement
 			return !GameMode.IsCriticalPlugin(p_plgPlugin);
 		}
 
+		/// <summary>
+		/// Runs the managed updaters.
+		/// </summary>
+		/// <param name="p_hashMods">The hash of mods.</param>
+		/// <param name="p_booEnable">Enable/Disable/Toggle.</param>
+		/// <param name="p_camConfirm">The delegate to call to confirm an action.</param>
+		/// <returns>The background task that will run the updaters.</returns>
+		public IBackgroundTask ManageMultiplePluginsTask(List<Plugin> p_lstPlugins, bool p_booEnable, ConfirmActionMethod p_camConfirm)
+		{
+			ManageMultiplePluginsTask mptManageMultiplePlugins = new ManageMultiplePluginsTask(p_lstPlugins, ActivePluginLog, p_booEnable);
+			mptManageMultiplePlugins.Update(p_camConfirm);
+			return mptManageMultiplePlugins;
+		}
+
 		#endregion
 
 		#region Plugin Ordering
@@ -391,7 +419,7 @@ namespace Nexus.Client.PluginManagement
 		/// <c>false</c> otherwise.</returns>
 		public bool CanActivatePlugins()
 		{ 
-			return !((GameMode.MaxAllowedActivePluginsCount > 0) && (ActivePlugins.Count >= GameMode.MaxAllowedActivePluginsCount));
+			return true;
 		}
 	}
 }

@@ -45,11 +45,13 @@ namespace Nexus.Client.UI.Controls
 			this.tlcWebVersion = new BrightIdeasSoftware.OLVColumn();
 			this.tlcAuthor = new BrightIdeasSoftware.OLVColumn();
 			this.tlcCategory = new BrightIdeasSoftware.OLVColumn();
+			this.tlcDownloadDate = new BrightIdeasSoftware.OLVColumn();
 
 			this.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
 			this.tlcModName,
 			this.tlcCategory,
 			this.tlcInstallDate,
+			tlcDownloadDate,
 			this.tlcEndorsement,
 			this.tlcVersion,
 			this.tlcWebVersion,
@@ -70,6 +72,12 @@ namespace Nexus.Client.UI.Controls
 			this.tlcInstallDate.Text = "Install Date";
 			this.tlcInstallDate.TextAlign = HorizontalAlignment.Center;
 			this.tlcInstallDate.IsEditable = false;
+			// 
+			// tlcDownloadDate
+			// 
+			this.tlcDownloadDate.Text = "Download Date";
+			this.tlcDownloadDate.TextAlign = HorizontalAlignment.Center;
+			this.tlcDownloadDate.IsEditable = false;
 			// 
 			// tlcEndorsement
 			// 
@@ -105,6 +113,7 @@ namespace Nexus.Client.UI.Controls
 		private System.Windows.Forms.ContextMenuStrip cmsContextMenu;
 		private BrightIdeasSoftware.OLVColumn tlcModName;
 		private BrightIdeasSoftware.OLVColumn tlcInstallDate;
+		private BrightIdeasSoftware.OLVColumn tlcDownloadDate;
 		private BrightIdeasSoftware.OLVColumn tlcEndorsement;
 		private BrightIdeasSoftware.OLVColumn tlcVersion;
 		private BrightIdeasSoftware.OLVColumn tlcWebVersion;

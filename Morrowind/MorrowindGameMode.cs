@@ -1,22 +1,33 @@
 ﻿using System.IO;
+using System.Collections.Generic;
+using System;
 using Nexus.Client.Games.Gamebryo;
 using Nexus.Client.Games.Morrowind.Tools;
 using Nexus.Client.Games.Tools;
+using Nexus.Client.Games.Morrowind.PluginManagement.Boss;
+using Nexus.Client.Games.Gamebryo.PluginManagement.InstallationLog;
+using Nexus.Client.Games.Gamebryo.PluginManagement.OrderLog;
+using Nexus.Client.PluginManagement;
+using Nexus.Client.PluginManagement.InstallationLog;
+using Nexus.Client.PluginManagement.OrderLog;
+using Nexus.Client.Plugins;
 using Nexus.Client.Mods;
 using Nexus.Client.Util;
 
 
 namespace Nexus.Client.Games.Morrowind
 {
-    /// <summary>
-    /// Provides information required for the programme to manage Morrowind plugins and mods.
-    /// </summary>
-    public class MorrowindGameMode : GamebryoGameModeBase
-    {
-        private static string[] SCRIPT_EXTENDER_EXECUTABLES = { "mwse_loader.exe" };
-        private MorrowindGameModeDescriptor m_gmdGameModeInfo = null;
-        private MorrowindLauncher m_glnGameLauncher = null;
-        private MorrowindToolLauncher m_gtlToolLauncher = null;
+	/// <summary>
+	/// Provides information required for the programme to manage Morrowind plugins and mods.
+	/// </summary>
+	public class MorrowindGameMode : GamebryoGameModeBase
+	{
+		private static string[] SCRIPT_EXTENDER_EXECUTABLES = { "mwse_loader.exe" };
+		private MorrowindGameModeDescriptor m_gmdGameModeInfo = null;
+		private MorrowindLauncher m_glnGameLauncher = null;
+		private MorrowindToolLauncher m_gtlToolLauncher = null;
+		private GamebryoActivePluginLogSerializer m_apsActivePluginLogSerializer = null;
+		private GamebryoPluginOrderLogSerializer m_posPluginOrderSerializer = null;
 
         #region Properties
                
@@ -84,6 +95,47 @@ namespace Nexus.Client.Games.Morrowind
 			}
 		}
 
+		/// <summary>
+		/// Gets whether the game mode supports the automatic sorting
+		/// functionality for plugins.
+		/// </summary>
+		public override bool SupportsPluginAutoSorting
+		{
+			get
+			{
+				return false;
+			}
+		}
+
+		/// <summary>
+		/// Gets the plugin loadorder manager.
+		/// </summary>
+		/// <value>The plugin loadorder manager.</value>
+		public override ILoadOrderManager LoadOrderManager
+		{
+			get
+			{
+				return BossSorter;
+			}
+		}
+
+		/// <summary>
+		/// Gets the BossSorter plugin manager.
+		/// </summary>
+		/// <value>The BossSorter plugin manager.</value>
+		protected BossSorter BossSorter { get; private set; }
+
+		/// <summary>
+		/// Whether the plugin sorter is properly initialized.
+		/// </summary>
+		public override bool PluginSorterInitialized
+		{
+			get
+			{
+				return false;
+			}
+		}
+
         #endregion
 
         #region Constructors
@@ -96,6 +148,9 @@ namespace Nexus.Client.Games.Morrowind
         public MorrowindGameMode(IEnvironmentInfo p_eifEnvironmentInfo, FileUtil p_futFileUtility)
             : base(p_eifEnvironmentInfo, p_futFileUtility)
         {
+			string strPath = p_eifEnvironmentInfo.ApplicationPersonalDataFolderPath;
+			strPath = Path.Combine(Path.Combine(strPath, "boss"), "masterlist.txt");
+			BossSorter = new BossSorter(p_eifEnvironmentInfo, this, p_futFileUtility, strPath);
         }
 
         #endregion
@@ -111,6 +166,33 @@ namespace Nexus.Client.Games.Morrowind
             return new GamebryoSettingsFiles();
         }
 
+		/// <summary>
+		/// Gets the serializer that serializes and deserializes the plugin order
+		/// for this game mode.
+		/// </summary>
+		/// <returns>The serailizer that serializes and deserializes the plugin order
+		/// for this game mode.</returns>
+		public override IPluginOrderLogSerializer GetPluginOrderLogSerializer()
+		{
+			if (m_posPluginOrderSerializer == null)
+				m_posPluginOrderSerializer = new GamebryoPluginOrderLogSerializer(BossSorter, null);
+			return m_posPluginOrderSerializer;
+		}
+
+		/// <summary>
+		/// Gets the serailizer that serializes and deserializes the list of active plugins
+		/// for this game mode.
+		/// </summary>
+		/// <param name="p_polPluginOrderLog">The <see cref="IPluginOrderLog"/> tracking plugin order for the current game mode.</param>
+		/// <returns>The serailizer that serializes and deserializes the list of active plugins
+		/// for this game mode.</returns>
+		public override IActivePluginLogSerializer GetActivePluginLogSerializer(IPluginOrderLog p_polPluginOrderLog)
+		{
+			if (m_apsActivePluginLogSerializer == null)
+				m_apsActivePluginLogSerializer = new GamebryoActivePluginLogSerializer(this, p_polPluginOrderLog, BossSorter);
+			return m_apsActivePluginLogSerializer;
+		}
+
         /// <summary>
         /// Adds the settings files to the game mode's list.
         /// </summary>
@@ -119,6 +201,13 @@ namespace Nexus.Client.Games.Morrowind
             base.SetupSettingsFiles();
             SettingsFiles.IniPath = Path.Combine(UserGameDataPath, "Morrowind.ini");
         }
+
+		/// <summary>
+		/// Setup for the plugin management libraries.
+		/// </summary>
+		protected override void SetupPluginManagement(FileUtil p_futFileUtility)
+		{
+		}
 
         #endregion
 
@@ -141,6 +230,16 @@ namespace Nexus.Client.Games.Morrowind
                 return Path.Combine("Data Files", p_strPath ?? "");
             return p_strPath;
         }
+
+
+		/// <summary>
+		/// Sorts the plugins.
+		/// </summary>
+		/// <param name="p_lstPlugins">The list of plugin to order.</param>
+		public override string[] SortPlugins(IList<Plugin> p_lstPlugins)
+		{
+			return null;
+		}
 
         /// <summary>
         /// Creates a game mode descriptor for the current game mode.

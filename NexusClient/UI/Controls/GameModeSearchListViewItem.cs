@@ -17,7 +17,7 @@ namespace Nexus.Client.UI.Controls
 	{
 		private bool m_booAcceptedPath = false;
 		private bool m_booGamePathDetected = false;
-
+		
 		#region Properties
 
 		/// <summary>
@@ -107,15 +107,6 @@ namespace Nexus.Client.UI.Controls
 			}
 		}
 
-		public void StopSearching()
-		{
-			if (Discoverer.Status != TaskStatus.Complete)
-			{
-				SetVisiblePanel(pnlNotFound);
-				Discoverer.Cancel(GameMode.ModeId);
-			}
-		}
-
 		/// <summary>
 		/// Handles the <see cref="INotifyPropertyChanged.PropertyChanged"/> event of the game discoverer.
 		/// </summary>
@@ -130,6 +121,15 @@ namespace Nexus.Client.UI.Controls
 				lblProgressMessage.Invoke((Action<object, PropertyChangedEventArgs>)Detector_PropertyChanged, sender, e);
 			else if (e.PropertyName.Equals(ObjectHelper.GetPropertyName<IBackgroundTask>(x => x.OverallMessage)))
 				lblProgressMessage.Text = Discoverer.OverallMessage;
+		}
+
+		public void StopSearching()
+		{
+			if (Discoverer.Status != TaskStatus.Complete)
+			{
+				SetVisiblePanel(pnlNotFound);
+				Discoverer.Cancel(GameMode.ModeId);
+			}
 		}
 
 		#endregion

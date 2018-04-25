@@ -396,24 +396,24 @@ namespace Nexus.Client.DownloadMonitoring.UI
 		/// <summary>
 		/// Resumes all paused tasks.
 		/// </summary>
-		public void ResumeAllTasks()
-		{
-			if (ModRepository.IsOffline)
-				m_mmgModManager.Login();
-			else
-			{
-				List<IBackgroundTask> lstTasks = new List<IBackgroundTask>();
-				lock (Tasks)
-				{
-					foreach (IBackgroundTask btTask in Tasks)
-						if ((btTask.Status == TaskStatus.Paused) || (btTask.Status == TaskStatus.Incomplete))
-							lstTasks.Add(btTask);
-				}
-				if (lstTasks.Count > 0)
-					foreach (IBackgroundTask btPaused in lstTasks)
-						ResumeTask(btPaused);
-			}
-		}
+        public void ResumeAllTasks()
+        {
+            if (ModRepository.IsOffline)
+                m_mmgModManager.Login();
+            else
+            {
+                List<IBackgroundTask> lstTasks = new List<IBackgroundTask>();
+                lock (Tasks)
+                {
+                    foreach (IBackgroundTask btTask in Tasks)
+                        if ((btTask.Status == TaskStatus.Paused) || (btTask.Status == TaskStatus.Incomplete))
+                            lstTasks.Add(btTask);
+                }
+                if (lstTasks.Count > 0)
+                    foreach (IBackgroundTask btPaused in lstTasks)
+                        ResumeTask(btPaused);
+            }
+        }
 
 		void bgwWorker_DoWork(object sender, DoWorkEventArgs e)
 		{

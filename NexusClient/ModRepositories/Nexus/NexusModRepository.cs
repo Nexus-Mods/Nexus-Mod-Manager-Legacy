@@ -89,7 +89,7 @@ namespace Nexus.Client.ModRepositories.Nexus
 		/// Gets whether the repository supports unauthenticated downloads.
 		/// </summary>
 		/// <value>Whether the repository supports unauthenticated downloads.</value>
-		public bool SupportsUnauthenticatedDownload
+		public bool SupportsUnauthenticatedDownload 
 		{
 			get
 			{
@@ -107,7 +107,7 @@ namespace Nexus.Client.ModRepositories.Nexus
 		/// Gets whether the repository is in a forced offline mode.
 		/// </summary>
 		/// <value>Whether the repository is in a forced offline mode.</value>
-		public bool IsOffline
+		public bool IsOffline 
 		{
 			get
 			{
@@ -138,11 +138,11 @@ namespace Nexus.Client.ModRepositories.Nexus
 		/// </summary>
 		/// <value>The number of maximum allowed concurrent downloads.</value>
 		public Int32 MaxConcurrentDownloads
-		{
+		{ 
 			get
 			{
 				return m_intMaxConcurrentDownloads;
-			}
+			} 
 		}
 
 		#endregion
@@ -217,6 +217,11 @@ namespace Nexus.Client.ModRepositories.Nexus
 					m_strEndpoint = "FONVNexusREST";
 					m_intRemoteGameId = 130;
 					break;
+				case "Fallout4":
+					m_strWebsite = "fallout4.nexusmods.com";
+					m_strEndpoint = "FO4NexusREST";
+					m_intRemoteGameId = 1151;
+					break;
 				case "Morrowind":
 					m_strWebsite = "morrowind.nexusmods.com";
 					m_strEndpoint = "MWNexusREST";
@@ -262,11 +267,16 @@ namespace Nexus.Client.ModRepositories.Nexus
 					m_strEndpoint = "W2NexusREST";
 					m_intRemoteGameId = 153;
 					break;
+				case "Witcher3":
+					m_strWebsite = "witcher3.nexusmods.com";
+					m_strEndpoint = "W3NexusREST";
+					m_intRemoteGameId = 952;
+					break;
 				case "XRebirth":
 					m_strWebsite = "xrebirth.nexusmods.com";
 					m_strEndpoint = "XRNexusREST";
 					m_intRemoteGameId = 154;
-					break;
+                    break;
 				case "Starbound":
 					m_strWebsite = "starbound.nexusmods.com";
 					m_strEndpoint = "STARBOUNDNexusREST";
@@ -424,6 +434,21 @@ namespace Nexus.Client.ModRepositories.Nexus
 					strCookie = nmrApi.LoginPOST(p_strUsername, p_strPassword);
 				}
 			}
+			catch (MessageHeaderException e)
+            {
+                //'NexusLoginErrorCode: 1' - 'Invalid username or password.'
+                //'NexusLoginErrorCode: 2' - 'Validation required in order to use the account.'
+                //'NexusLoginErrorCode: 3' - 'This account has been banned.'
+                //'NexusLoginErrorCode: 4' - 'Invalid login data.'
+
+                string strNexusLoginErrorCode = e.Message.Split('#')[0].Trim();
+				string strNexusLoginErrorMessage = String.Empty;
+				if (strNexusLoginErrorCode.Equals("4"))
+					strNexusLoginErrorMessage = "Wrong username or password.";
+				else
+	                strNexusLoginErrorMessage = e.Message.Split('#')[1].Trim();
+                throw new RepositoryUnavailableException(String.Format("{0}", strNexusLoginErrorMessage), e);
+            }
 			catch (TimeoutException e)
 			{
 				throw new RepositoryUnavailableException(String.Format("Timeout! Cannot reach the {0} login server.", Name), e);
@@ -459,16 +484,20 @@ namespace Nexus.Client.ModRepositories.Nexus
 				if (e.Message == "Internal Server Error")
 					throw new RepositoryUnavailableException(String.Format("{0} server error! This is a server issue, try again after a few minutes.", Name), e);
 				else
-					throw new RepositoryUnavailableException(String.Format("Error communicating with the server! Cannot reach the {0} login server.", Name), e);
+					throw new RepositoryUnavailableException(String.Format("Cannot reach the {0} login server. Either your firewall is blocking NMM or the login server is down.", Name), e);
 			}
 			catch (SerializationException e)
 			{
 				Trace.WriteLine("Login error: " + e.Message);
 				if (e.InnerException != null)
 					Trace.WriteLine("Login inner exception: " + e.InnerException.Message);
-				throw new RepositoryUnavailableException(String.Format("Unexpected response! Cannot reach the {0} login server.", Name), e);
+				throw new RepositoryUnavailableException(String.Format("Unexpected response from the {0} login server. Please try again later.", Name), e);
 			}
 			m_dicAuthenticationTokens = new Dictionary<string, string>();
+
+			if (String.IsNullOrEmpty(strCookie))
+				throw new RepositoryUnavailableException(String.Format("{0} server error! Either your firewall is blocking NMM or the login server is down.", Name));
+
 			if (!String.IsNullOrEmpty(strCookie))
 				m_dicAuthenticationTokens["sid"] = strCookie;
 			p_dicTokens = m_dicAuthenticationTokens;
@@ -530,7 +559,7 @@ namespace Nexus.Client.ModRepositories.Nexus
 					}
 
 				}
-				throw new RepositoryUnavailableException(String.Format("Error communicating with the server! Cannot reach the {0} login server.", Name), e);
+				throw new RepositoryUnavailableException(String.Format("Cannot reach the {0} login server. Either your firewall is blocking NMM or the login server is down.", Name), e);
 			}
 			catch (SerializationException e)
 			{
@@ -539,6 +568,14 @@ namespace Nexus.Client.ModRepositories.Nexus
 					Trace.WriteLine("Login inner exception: " + e.InnerException.Message);
 				throw new RepositoryUnavailableException(String.Format("Unexpected response! Cannot reach the {0} login server.", Name), e);
 			}
+			catch (Exception e)
+			{
+				Trace.WriteLine("Login error: " + e.Message);
+				if (e.InnerException != null)
+					Trace.WriteLine("Login inner exception: " + e.InnerException.Message);
+				throw new RepositoryUnavailableException(String.Format("Unable to perform token authentication, retry using your credentials.", Name), e);
+			}
+
 			if (String.IsNullOrEmpty(strCookie))
 				m_dicAuthenticationTokens = null;
 
@@ -1001,8 +1038,8 @@ namespace Nexus.Client.ModRepositories.Nexus
 			{
 				List<string> Countries = (from Url
 											in fsiList
-										  where !String.IsNullOrEmpty(Url.Country)
-										  select Url.Country).ToList();
+											where !String.IsNullOrEmpty(Url.Country)
+											select Url.Country).ToList();
 
 				if ((Countries != null) && (Countries.Count > 0))
 				{
@@ -1043,8 +1080,8 @@ namespace Nexus.Client.ModRepositories.Nexus
 
 						Countries = (from Url
 										in fsiList
-									 where RepositoryFileServerZones.Find(x => x.FileServerID == Url.Country) != null
-									 select Url.Country).ToList();
+										where RepositoryFileServerZones.Find(x => x.FileServerID == Url.Country) != null
+										select Url.Country).ToList();
 
 						if ((Countries != null) && (Countries.Count > 0))
 						{
@@ -1058,7 +1095,7 @@ namespace Nexus.Client.ModRepositories.Nexus
 				}
 			}
 			catch
-			{ }
+			{}
 
 			try
 			{

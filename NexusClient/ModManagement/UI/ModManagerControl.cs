@@ -5,9 +5,12 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
+using System.Windows.Input;
+using System.Xml.Linq;
 using Nexus.Client.BackgroundTasks;
 using Nexus.Client.BackgroundTasks.UI;
 using Nexus.Client.Commands;
@@ -32,9 +35,11 @@ namespace Nexus.Client.ModManagement.UI
 		private bool m_booResizing = false;
 		private Timer m_tmrColumnSizer = new Timer();
 		private bool m_booDisableSummary = true;
-
+		private bool m_booDisableLoadBackup = false;
+		
 		public event EventHandler SetTextBoxFocus;
 		public event EventHandler ResetSearchBox;
+		public event EventHandler UpdateModsCount;
 
 		#region Properties
 
@@ -68,8 +73,7 @@ namespace Nexus.Client.ModManagement.UI
 					modMod.PropertyChanged -= new PropertyChangedEventHandler(Mod_PropertyChanged);
 					modMod.PropertyChanged += new PropertyChangedEventHandler(Mod_PropertyChanged);
 				}
-
-
+				
 				LoadModFormatFilter();
 
 				tsbAddMod.DefaultItem = tsbAddMod.DropDownItems[m_vmlViewModel.Settings.SelectedAddModCommandIndex];
@@ -82,8 +86,8 @@ namespace Nexus.Client.ModManagement.UI
 				m_vmlViewModel.ConfirmModUpgrade = ConfirmModUpgrade;
 
 				new ToolStripItemCommandBinding<IMod>(tsbDeleteMod, m_vmlViewModel.DeleteModCommand, GetSelectedMod);
-				new ToolStripItemCommandBinding<IMod>(tsbActivate, m_vmlViewModel.ActivateModCommand, GetSelectedMod);
-				new ToolStripItemCommandBinding<IMod>(tsbDeactivate, m_vmlViewModel.DeactivateModCommand, GetSelectedMod);
+				new ToolStripItemCommandBinding<List<IMod>>(tsbActivate, m_vmlViewModel.ActivateModCommand, GetSelectedMods);
+				new ToolStripItemCommandBinding<List<IMod>>(tsbDeactivate, m_vmlViewModel.DeactivateModCommand, GetSelectedMods);
 				new ToolStripItemCommandBinding<IMod>(tsbTagMod, m_vmlViewModel.TagModCommand, GetSelectedMod);
 				Command cmdToggleEndorsement = new Command("Toggle Mod Endorsement", "Toggles the mod endorsement.", ToggleEndorsement);
 				new ToolStripItemCommandBinding(tsbToggleEndorse, cmdToggleEndorsement);
@@ -212,9 +216,10 @@ namespace Nexus.Client.ModManagement.UI
 
 			try
 			{
-				IMod modMod = GetSelectedMod();
+                HashSet<IMod> hashMods = GetSelectedModsHashset();
+                IMod modMod = GetSelectedMod();
 				booCurrentState = modMod.IsEndorsed;
-				ViewModel.ToggleModEndorsement(modMod);
+                ViewModel.ToggleModEndorsement(modMod, hashMods, null);
 				tsbToggleEndorse.Enabled = true;
 			}
 			catch (Exception e)
@@ -309,35 +314,63 @@ namespace Nexus.Client.ModManagement.UI
 		}
 
 		/// <summary>
+		/// Retruns the mod that is currently selected in the view.
+		/// </summary>
+		/// <returns>The mod that is currently selected in the view, or
+		/// <c>null</c> if no mod is selected.</returns>
+		private List<IMod> GetSelectedMods()
+		{
+			if ((clwCategoryView.Visible && (clwCategoryView.SelectedIndices.Count == 0)) || (clwCategoryView.GetSelectedItem == null))
+				return null;
+			else
+				return clwCategoryView.GetSelectedItems.OfType<IMod>().ToList();
+		}
+
+		/// <summary>
 		/// Sets the executable status of the commands.
 		/// </summary>
 		protected void SetCommandExecutableStatus()
 		{
-			if (((clwCategoryView.SelectedIndices.Count > 0) && clwCategoryView.Visible && (clwCategoryView.GetSelectedItem.GetType() != typeof(ModCategory))))
+			if (!m_booDisableLoadBackup)
 			{
-				if (clwCategoryView.Visible)
-					ViewModel.DeactivateModCommand.CanExecute = ViewModel.ActiveMods.Contains((IMod)clwCategoryView.GetSelectedItem);
+				if ((((clwCategoryView.SelectedIndices.Count > 0) || (clwCategoryView.SelectedObjects.Count > 0))  && clwCategoryView.Visible && (clwCategoryView.GetSelectedItem.GetType() != typeof(ModCategory))))
+				{
+					if (clwCategoryView.Visible)
+						ViewModel.DeactivateModCommand.CanExecute = ViewModel.ActiveMods.Contains((IMod)clwCategoryView.GetSelectedItem);
 
-				ViewModel.ActivateModCommand.CanExecute = !ViewModel.DeactivateModCommand.CanExecute;
+					ViewModel.ActivateModCommand.CanExecute = !ViewModel.DeactivateModCommand.CanExecute;
 
-				ViewModel.DeleteModCommand.CanExecute = true;
-				ViewModel.TagModCommand.CanExecute = true;
-				tsbToggleEndorse.Enabled = true;
-				tsbToggleEndorse.Image = GetSelectedMod().IsEndorsed == true ? Properties.Resources.unendorsed : Properties.Resources.endorsed;
+					ViewModel.DeleteModCommand.CanExecute = true;
+					ViewModel.TagModCommand.CanExecute = true;
+					tsbToggleEndorse.Enabled = true;
+					tsbToggleEndorse.Image = GetSelectedMod().IsEndorsed == true ? Properties.Resources.unendorsed : Properties.Resources.endorsed;
+				}
+				else
+				{
+					ViewModel.ActivateModCommand.CanExecute = false;
+					ViewModel.DeactivateModCommand.CanExecute = false;
+					ViewModel.DeleteModCommand.CanExecute = false;
+					ViewModel.TagModCommand.CanExecute = false;
+					tsbToggleEndorse.Enabled = false;
+					tsbToggleEndorse.Image = Properties.Resources.unendorsed;
+				}
+
+				this.tsbDeactivate.Visible = ViewModel.DeactivateModCommand.CanExecute;
+				this.tsbActivate.Visible = ViewModel.ActivateModCommand.CanExecute;
 			}
-			else
-			{
-				ViewModel.ActivateModCommand.CanExecute = false;
-				ViewModel.DeactivateModCommand.CanExecute = false;
-				ViewModel.DeleteModCommand.CanExecute = false;
-				ViewModel.TagModCommand.CanExecute = false;
-				tsbToggleEndorse.Enabled = false;
-				tsbToggleEndorse.Image = Properties.Resources.unendorsed;
-			}
-
-			this.tsbDeactivate.Visible = ViewModel.DeactivateModCommand.CanExecute;
-			this.tsbActivate.Visible = ViewModel.ActivateModCommand.CanExecute;
 		}
+
+		/// <summary>
+		/// Sets the executable status of the commands in the Mod Manager Control.
+		/// </summary>
+		public void SetCommandBackupMMCStatus(bool p_booCheck)
+		{
+			Control.CheckForIllegalCrossThreadCalls = false;
+			m_booDisableLoadBackup = !p_booCheck;
+			tsbActivate.Enabled = p_booCheck;
+			tsbDeactivate.Enabled = p_booCheck;
+			tsbDeleteMod.Enabled = p_booCheck;
+ 		}
 
 		#endregion
 
@@ -500,9 +533,9 @@ namespace Nexus.Client.ModManagement.UI
 		/// </summary>
 		/// <param name="sender">The object that raised the event.</param>
 		/// <param name="e">An <see cref="EventArgs"/> describing the event arguments.</param>
-		public void DeactivateAllMods()
+        public void DeactivateAllMods(bool booForceUninstall)
 		{
-			ViewModel.DeactivateMultipleMods(ViewModel.ActiveMods);
+            ViewModel.DeactivateMultipleMods(ViewModel.ActiveMods, booForceUninstall);
 		}
 
 		#region Category Management
@@ -538,6 +571,7 @@ namespace Nexus.Client.ModManagement.UI
 				// Enables installing/uninstalling mods using the double click; if a category is clicked it will be expanded/collapsed
 				this.clwCategoryView.CellClick += delegate(object sender, BrightIdeasSoftware.CellClickEventArgs e)
 				{
+					clwCategoryView.RetrieveVirtualItem += new RetrieveVirtualItemEventHandler(listView1_RetrieveVirtualItem);
 					if ((e.ClickCount == 2) && (e.Item != null))
 					{
 						try
@@ -555,9 +589,9 @@ namespace Nexus.Client.ModManagement.UI
 								if (modMod != null)
 								{
 									if (ViewModel.ActiveMods.Contains(modMod))
-										ViewModel.DeactivateModCommand.Execute(modMod);
+										ViewModel.DeactivateModCommand.Execute(new List<IMod>() { modMod });
 									else
-										ViewModel.ActivateModCommand.Execute(modMod);
+										ViewModel.ActivateModCommand.Execute(new List<IMod>() { modMod });
 								}
 							}
 						}
@@ -575,7 +609,7 @@ namespace Nexus.Client.ModManagement.UI
 						SetTextBoxFocus(this, e);
 					}
 				};
-
+				
 				// Enables removing categories or mods using the DEL key
 				this.clwCategoryView.KeyUp += delegate(object sender, KeyEventArgs e)
 				{
@@ -643,6 +677,15 @@ namespace Nexus.Client.ModManagement.UI
 		public void ResetColumns()
 		{
 			clwCategoryView.ResetColumns();
+		}
+
+		/// <summary>
+		//The Shift Key + mouse click event 
+		/// </summary>
+		void listView1_RetrieveVirtualItem(object sender,RetrieveVirtualItemEventArgs e)
+		{
+			clwCategoryView.RetrieveVirtualItem -= new RetrieveVirtualItemEventHandler(listView1_RetrieveVirtualItem);
+			SetCommandExecutableStatus();
 		}
 
 		/// <summary>
@@ -1030,7 +1073,7 @@ namespace Nexus.Client.ModManagement.UI
 		private void clwCategoryView_AfterLabelEdit(object sender, LabelEditEventArgs e)
 		{
 			string strValue = e.Label;
-			if (!String.IsNullOrEmpty(strValue))
+			if (!String.IsNullOrEmpty(strValue) && (clwCategoryView.SelectedItem != null))
 			{
 				if (clwCategoryView.SelectedItem.RowObject.GetType() == typeof(ModCategory))
 				{
@@ -1258,6 +1301,92 @@ namespace Nexus.Client.ModManagement.UI
 
 		#endregion
 
+        /// <summary>
+        /// Load the list
+        /// categories.
+        /// </summary>
+        /// <param name="p_strProfilePath">The profile path.</param>
+        /// <param name="p_strTempPath">The Temp path.</param>
+        public bool LoadListOnDemand(string p_strProfilePath, out string p_strTempPath)
+		{
+			//string strTempFolder = Path.Combine(ViewModel.Settings.TempPathFolder, Path.GetRandomFileName());
+			string strTempFolder = Path.Combine(String.IsNullOrEmpty(ViewModel.Settings.TempPathFolder) ? Path.GetTempPath() : ViewModel.Settings.TempPathFolder, Path.GetRandomFileName());
+			p_strTempPath = strTempFolder;
+
+			try
+			{
+				ZipFile.ExtractToDirectory(p_strProfilePath, strTempFolder);
+			}
+			catch(InvalidDataException)
+			{
+				MessageBox.Show("You have selected an invalid archive!");
+			}
+			
+			if (File.Exists(strTempFolder + "\\modlist.xml"))
+			{
+				XDocument docVirtual = XDocument.Load(strTempFolder + "\\modlist.xml");
+				string strVersion = docVirtual.Element("virtualModActivator").Attribute("fileVersion").Value;
+
+				try
+				{
+					XElement xelModList = docVirtual.Descendants("modList").FirstOrDefault();
+					if ((xelModList != null) && xelModList.HasElements)
+					{
+						ViewModel.ModManager.lstMBInfo.Clear();
+						foreach (XElement xelMod in xelModList.Elements("modInfo"))
+						{
+							string strModId = xelMod.Attribute("modId").Value;
+							string strModName = xelMod.Attribute("modName").Value;
+							string strModFileName = xelMod.Attribute("modFileName").Value;
+							string strModFilePath = xelMod.Attribute("modFilePath").Value;
+
+							IMod modMod = ViewModel.ModManager.ManagedMods.Where(x => Path.GetFileName(x.Filename.ToLowerInvariant()) == strModFileName.ToLowerInvariant()).FirstOrDefault();
+							ModBackupInfo MBInfo = new ModBackupInfo(modMod);
+							
+							foreach (XElement xelLink in xelMod.Elements("fileLink"))
+							{
+								string strRealPath = xelLink.Attribute("realPath").Value;
+								string strVirtualPath = xelLink.Attribute("virtualPath").Value;
+								Int32 intPriority = 0;
+								try
+								{
+									intPriority = Convert.ToInt32(xelLink.Element("linkPriority").Value);
+								}
+								catch { }
+								bool booActive = false;
+								try
+								{
+									booActive = Convert.ToBoolean(xelLink.Element("isActive").Value);
+								}
+								catch { }
+
+								//MBInfo.Dictionary = new Dictionary<string, bool>();
+								MBInfo.ModFileDictionary.Add(strVirtualPath, booActive);
+							}
+							if (MBInfo.Mod != null)
+								ViewModel.ModManager.lstMBInfo.Add(MBInfo);
+						}
+						
+						if (ViewModel.ModManager.lstMBInfo.Count > 0)
+						{
+							foreach (ModBackupInfo mbInfo in ViewModel.ModManager.lstMBInfo)
+							{
+								ViewModel.ActivateMod(mbInfo.Mod);
+							}
+						}
+						else
+							return false;
+					
+						return true;
+					}
+				}
+				catch (Exception ex)
+				{ }
+			}
+
+			return false;
+		}
+
 		/// <summary>
 		/// Handles the <see cref="INotifyCollectionChanged.CollectionChanged"/> event of the view model's
 		/// installed mod list.
@@ -1321,6 +1450,7 @@ namespace Nexus.Client.ModManagement.UI
 			}
 
 			clwCategoryView.ReloadList(false);
+			UpdateModsCount(this, e);
 			SetCommandExecutableStatus();
 		}
 
@@ -1341,9 +1471,17 @@ namespace Nexus.Client.ModManagement.UI
 			}
 			if ((!clwCategoryView.CategoryModeEnabled) && (!String.Equals(e.PropertyName, "InstallDate")))
 			{
-				//clwCategoryView.RefreshObject((IMod)sender);
 				clwCategoryView.ReloadList(true);
 			}
+
+			if (clwCategoryView.CategoryModeEnabled)
+			{
+				if (String.Equals(e.PropertyName, "CustomCategoryId") || String.Equals(e.PropertyName, "ModName"))
+					clwCategoryView.Refresh();
+				else
+					clwCategoryView.RefreshObject((IMod)sender);
+			}
+
 			if (!m_booDisableSummary && ViewModel.Settings.ShowSidePanel)
 				UpdateSummary((IMod)sender);
 		}
@@ -1382,8 +1520,11 @@ namespace Nexus.Client.ModManagement.UI
 			ProgressDialog.ShowDialog(this, e.Argument);
 			m_booDisableSummary = false;
 
-			string strMessage = "All the active mods were uninstalled.";
-			MessageBox.Show(strMessage, "Mod uninstall complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			if (m_booDisableLoadBackup)
+			{
+				string strMessage = "All the active mods were uninstalled.";
+				MessageBox.Show(strMessage, "Mod uninstall complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			}
 		}
 
 		/// <summary>
@@ -1450,6 +1591,8 @@ namespace Nexus.Client.ModManagement.UI
 			if (!clwCategoryView.CategoryModeEnabled)
 				clwCategoryView.ReloadList(true);
 
+			UpdateModsCount(this, e);
+
 			SetCommandExecutableStatus();
 		}
 
@@ -1512,8 +1655,8 @@ namespace Nexus.Client.ModManagement.UI
 		/// <param name="e">An <see cref="EventArgs{ModTaggerVM}"/> describing the event arguments.</param>
 		private void ViewModel_TaggingMod(object sender, EventArgs<ModTaggerVM> e)
 		{
-			if (!ViewModel.ModRepository.IsOffline)
-				new ModTaggerForm(e.Argument).ShowDialog(this);
+            if (!ViewModel.ModRepository.IsOffline)
+                new ModTaggerForm(e.Argument).ShowDialog(this);
 		}
 
 		#endregion

@@ -113,12 +113,6 @@ namespace Nexus.Client.Settings
 		bool ShowExpandedCategories { get; set; }
 
 		/// <summary>
-		/// Gets or sets whether the user whishes to ignore the update warning for the alternate version.
-		/// </summary>
-		/// <value>Whether the user whishes to ignore the update warning for the alternate version.</value>
-		bool IgnoreAlternateVersion { get; set; }
-
-		/// <summary>
 		/// Gets the installation path dictionary.
 		/// </summary>
 		/// <remarks>
@@ -320,6 +314,12 @@ namespace Nexus.Client.Settings
 		/// </summary>
 		/// <value>Whether to check for updates on startup.</value>
 		bool CheckForUpdatesOnStartup { get; set; }
+
+		/// <summary>
+        /// Gets or sets whether to check for tips on startup.
+        /// </summary>
+        /// <value>Whether to check for updates on startup.</value>
+        bool CheckForTipsOnStartup { get; set; }
 
 		/// <summary>
 		/// Gets or sets the last time the program checked for an update.

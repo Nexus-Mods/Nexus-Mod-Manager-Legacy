@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using Nexus.Client.ActivateModsMonitoring;
+using Nexus.Client.ActivateModsMonitoring.UI;
 using Nexus.Client.BackgroundTasks;
 using Nexus.Client.DownloadMonitoring;
 using Nexus.Client.DownloadMonitoring.UI;
@@ -122,6 +124,22 @@ namespace Nexus.Client
 		/// and operations for diaplying the download monitor.</value>
 		public DownloadMonitorVM DownloadMonitorVM { get; private set; }
 
+        /// <summary>
+ 		/// Gets the view model that encapsulates the data
+		/// and operations for diaplying the activate mod monitor.
+		/// </summary>
+		/// <value>The view model that encapsulates the data
+		/// and operations for diaplying the activate mod monitor.</value>
+		public ActivateModsMonitorVM ActivateModsMonitorVM { get; private set; }
+
+		/// <summary>
+		/// Gets the view model that encapsulates the data
+		/// and operations for diaplying the activate mod monitor.
+		/// </summary>
+		/// <value>The view model that encapsulates the data
+		/// and operations for diaplying the activate mod monitor.</value>
+		protected ActivateModsMonitor ModActivationMonitor { get; private set; }
+
 		/// <summary>
 		/// Gets the view model that encapsulates the data
 		/// and operations for diaplying the settings view.
@@ -129,6 +147,15 @@ namespace Nexus.Client
 		/// <value>The view model that encapsulates the data
 		/// and operations for diaplying the settings view.</value>
 		public SettingsFormVM SettingsFormVM { get; private set; }
+
+		/// <summary>
+        /// Gets the command to show the tip.
+        /// </summary>
+        /// <remarks>
+        /// The commands takes an argument to show the tip.
+        /// </remarks>
+        /// <value>The command to tag a mod.</value>
+        public Command<string> TipsCommand { get; set; }
 
 		/// <summary>
 		/// Gets the id of the game mode to which to change, if a game mode change
@@ -152,6 +179,18 @@ namespace Nexus.Client
 		/// </summary>
 		/// <value>The game mode currently being managed.</value>
 		protected IGameMode GameMode { get; private set; }
+
+		/// <summary>
+		/// Gets the name of the currently managed game mode.
+		/// </summary>
+		/// <value>The name of the currently managed game mode.</value>
+		public string CurrentGameModeName 
+		{ 
+			get
+			{
+				return GameMode.Name;
+			}
+		}
 
 		/// <summary>
 		/// Gets the help information.
@@ -302,6 +341,30 @@ namespace Nexus.Client
 			}
 		}
 
+		/// <summary>
+		/// Gets whether the manager is currently installing/uninstalling a mod.
+		/// </summary>
+		/// <value>Whether  the manager is currently installing/uninstalling a mod.</value>
+		public bool IsInstalling
+		{
+			get
+			{
+				return ModActivationMonitor.IsInstalling;
+			}
+		}
+
+		/// <summary>
+		/// Whether the plugin sorter is properly initialized.
+		/// </summary>
+		public bool PluginSorterInitialized
+		{
+			get
+			{
+				return GameMode.PluginSorterInitialized;
+			}
+		}
+
+
 		#endregion
 
 		#region Constructors
@@ -317,7 +380,7 @@ namespace Nexus.Client
 		/// <param name="p_umgUpdateManager">The update manager to use to perform updates.</param>
 		/// <param name="p_mmgModManager">The <see cref="ModManager"/> to use to manage mods.</param>
 		/// <param name="p_pmgPluginManager">The <see cref="PluginManager"/> to use to manage plugins.</param>
-		public MainFormVM(IEnvironmentInfo p_eifEnvironmentInfo, GameModeRegistry p_gmrInstalledGames, IGameMode p_gmdGameMode, IModRepository p_mrpModRepository, DownloadMonitor p_dmtMonitor, UpdateManager p_umgUpdateManager, ModManager p_mmgModManager, IPluginManager p_pmgPluginManager)
+        public MainFormVM(IEnvironmentInfo p_eifEnvironmentInfo, GameModeRegistry p_gmrInstalledGames, IGameMode p_gmdGameMode, IModRepository p_mrpModRepository, DownloadMonitor p_dmtMonitor, ActivateModsMonitor p_ammMonitor, UpdateManager p_umgUpdateManager, ModManager p_mmgModManager, IPluginManager p_pmgPluginManager)
 		{
 			EnvironmentInfo = p_eifEnvironmentInfo;
 			GameMode = p_gmdGameMode;
@@ -326,9 +389,12 @@ namespace Nexus.Client
 			ModRepository = p_mrpModRepository;
 			UpdateManager = p_umgUpdateManager;
 			ModManagerVM = new ModManagerVM(p_mmgModManager, p_eifEnvironmentInfo.Settings, p_gmdGameMode.ModeTheme);
-			if (GameMode.UsesPlugins)
-				PluginManagerVM = new PluginManagerVM(p_pmgPluginManager, p_eifEnvironmentInfo.Settings, p_gmdGameMode);
 			DownloadMonitorVM = new DownloadMonitorVM(p_dmtMonitor, p_eifEnvironmentInfo.Settings, p_mmgModManager, p_mrpModRepository);
+			ModActivationMonitor = p_ammMonitor;
+			ActivateModsMonitorVM = new ActivateModsMonitorVM(p_ammMonitor, p_eifEnvironmentInfo.Settings, p_mmgModManager);
+			if (GameMode.UsesPlugins)
+				PluginManagerVM = new PluginManagerVM(p_pmgPluginManager, p_eifEnvironmentInfo.Settings, p_gmdGameMode, p_ammMonitor);
+
 			HelpInfo = new HelpInformation(p_eifEnvironmentInfo);
 
 			GeneralSettingsGroup gsgGeneralSettings = new GeneralSettingsGroup(p_eifEnvironmentInfo);
@@ -396,6 +462,15 @@ namespace Nexus.Client
 		private void UpdateProgramme()
 		{
 			UpdateProgramme(false);
+		}
+
+		/// <summary>
+		/// Automatically sorts the plugin list.
+		/// </summary>
+		public void SortPlugins()
+		{
+			if (GameMode.UsesPlugins)
+				PluginManagerVM.SortPlugins();
 		}
 
 		/// <summary>
@@ -472,7 +547,7 @@ namespace Nexus.Client
 				else
 				{
 					ModRepository.Logout();
-					ModManager.Logout();
+                    ModManager.Logout();
 					EnvironmentInfo.Settings.RepositoryAuthenticationTokens.Remove(ModRepository.Id);
 					EnvironmentInfo.Settings.Save();
 				}
